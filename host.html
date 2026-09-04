@@ -23,10 +23,16 @@
     .frageBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
     .frageBox h2 { margin:0 0 8px 0; font-size:1.2rem; }
     .frageBox p { margin:0; }
+    .antwortenBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
+    .antwortenBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
+    .antwort { padding:8px; border-bottom:1px solid var(--border); }
+    .antwort:last-child { border-bottom:none; }
+    .antwort.richtig { color:var(--success); }
+    .antwort.falsch { color:var(--error); }
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v4</h1>
+  <h1>Quiz-Host v5</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -48,6 +54,11 @@
       <h2>Aktuelle Frage</h2>
       <p id="frageText"></p>
     </section>
+
+    <section id="antwortenBereich" class="antwortenBox">
+      <h2>Antworten</h2>
+      <div id="antwortenListe"></div>
+    </section>
   </section>
 
   <script type="module">
@@ -68,25 +79,28 @@
     const spielerListe = document.getElementById("spielerListe");
     const frageBereich = document.getElementById("frageBereich");
     const frageText = document.getElementById("frageText");
+    const antwortenBereich = document.getElementById("antwortenBereich");
+    const antwortenListe = document.getElementById("antwortenListe");
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    console.log("[INIT] Skript geladen");
+    const VERSION = "v5";
+    console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
-      console.log("[LOGIN] Prüfe Session ...");
+      console.log(`[LOGIN][${VERSION}] Prüfe Session ...`);
       const { data: sessionData } = await supabase.auth.getSession();
       if (sessionData.session) {
-        console.log("[LOGIN] Bereits angemeldet:", sessionData.session.user.id);
+        console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, sessionData.session.user.id);
         return;
       }
-      console.log("[LOGIN] Nicht angemeldet, versuche anonyme Anmeldung ...");
+      console.log(`[LOGIN][${VERSION}] Nicht angemeldet, versuche anonyme Anmeldung ...`);
       const { error } = await supabase.auth.signInAnonymously();
       if (error) {
-        console.error("[LOGIN] Fehler bei anonymer Anmeldung:", error);
+        console.error(`[LOGIN][${VERSION}] Fehler bei anonymer Anmeldung:`, error);
         throw error;
       }
-      console.log("[LOGIN] Anonym angemeldet");
+      console.log(`[LOGIN][${VERSION}] Anonym angemeldet`);
     }
 
     function erstelleLobbyCode() {
@@ -99,7 +113,7 @@
     }
 
     async function erstelleLobby() {
-      console.log("[LOBBY] Erstellen gestartet");
+      console.log(`[LOBBY][${VERSION}] Erstellen gestartet`);
       lobbyErstellenButton.disabled = true;
       status.className = "status";
       status.textContent = "Lobby wird erstellt ...";
@@ -107,22 +121,22 @@
         await stelleAnonymenLoginSicher();
         for (let versuch = 1; versuch <= 5; versuch += 1) {
           const code = erstelleLobbyCode();
-          console.log(`[LOBBY] Versuch ${versuch} mit Code:`, code);
+          console.log(`[LOBBY][${VERSION}] Versuch ${versuch} mit Code:`, code);
           const { data, error } = await supabase.rpc("create_lobby", { p_code: code });
           if (!error) {
-            console.log("[LOBBY] Erfolgreich erstellt:", data);
+            console.log(`[LOBBY][${VERSION}] Erfolgreich erstellt:`, data);
             aktuelleLobby = data;
             zeigeLobby();
             abonniereSpieler();
             status.textContent = "Lobby ist bereit.";
-            console.log("[LOBBY] Fertig, Lobby angezeigt und Subscriber gestartet");
+            console.log(`[LOBBY][${VERSION}] Fertig, Lobby angezeigt und Subscriber gestartet`);
             return;
           }
-          console.warn("[LOBBY] Fehler beim Erstellen:", error);
+          console.warn(`[LOBBY][${VERSION}] Fehler beim Erstellen:`, error);
           if (!error.message.includes("duplicate key") || versuch === 5) throw error;
         }
       } catch (error) {
-        console.error("[LOBBY] Abbruch mit Fehler:", error);
+        console.error(`[LOBBY][${VERSION}] Abbruch mit Fehler:`, error);
         status.className = "status fehler";
         status.textContent = `Fehler beim Erstellen: ${error.message}`;
         lobbyErstellenButton.disabled = false;
@@ -130,7 +144,7 @@
     }
 
     function zeigeLobby() {
-      console.log("[UI] Lobby anzeigen");
+      console.log(`[UI][${VERSION}] Lobby anzeigen`);
       const joinUrl = new URL("join.html", window.location.href);
       joinUrl.searchParams.set("lobby", aktuelleLobby.code);
       lobbyCodeAnzeige.textContent = aktuelleLobby.code;
@@ -139,15 +153,15 @@
     }
 
     async function ladeSpieler() {
-      console.log("[SPIELER] Lade Spieler für Lobby:", aktuelleLobby?.id);
+      console.log(`[SPIELER][${VERSION}] Lade Spieler für Lobby:`, aktuelleLobby?.id);
       const { data, error } = await supabase.from("players").select("display_name, score, joined_at").eq("lobby_id", aktuelleLobby.id).order("joined_at", { ascending:true });
       if (error) {
-        console.error("[SPIELER] Fehler beim Laden:", error);
+        console.error(`[SPIELER][${VERSION}] Fehler beim Laden:`, error);
         status.className = "status fehler";
         status.textContent = `Teilnehmer konnten nicht geladen werden: ${error.message}`;
         return;
       }
-      console.log("[SPIELER] Geladene Spieler:", data);
+      console.log(`[SPIELER][${VERSION}] Geladene Spieler:`, data);
       spielerListe.innerHTML = "";
       spielerAnzahl.textContent = data.length;
       for (const spieler of data) {
@@ -156,48 +170,54 @@
         spielerListe.appendChild(element);
       }
       const disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
-      console.log("[UI] StartButton disabled setzen auf:", disabled, "weil Spieler:", data.length, "Status:", aktuelleLobby.status);
+      console.log(`[UI][${VERSION}] StartButton disabled setzen auf:`, disabled, "weil Spieler:", data.length, "Status:", aktuelleLobby.status);
       startButton.disabled = disabled;
     }
 
     function abonniereSpieler() {
-      console.log("[SUB] Subscriber einrichten für Lobby:", aktuelleLobby?.id);
+      console.log(`[SUB][${VERSION}] Subscriber einrichten für Lobby:`, aktuelleLobby?.id);
       ladeSpieler();
       supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
-      console.log("[SUB] Spieler-Channel subscribed");
-      supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { console.log("[SUB] Lobby-Status Update empfangen"); ladeLobbyStatus(); }).subscribe();
-      console.log("[SUB] Lobby-Status-Channel subscribed");
+      console.log(`[SUB][${VERSION}] Spieler-Channel subscribed`);
+      supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { console.log(`[SUB][${VERSION}] Lobby-Status Update empfangen`); ladeLobbyStatus(); }).subscribe();
+      console.log(`[SUB][${VERSION}] Lobby-Status-Channel subscribed`);
       supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) {
-        console.log("[SUB] Runde Event empfangen:", payload);
+        console.log(`[SUB][${VERSION}] Runde Event empfangen:`, payload);
         ladeFrage();
+        ladeAntworten();
       }).subscribe();
-      console.log("[SUB] Runden-Channel subscribed");
+      console.log(`[SUB][${VERSION}] Runden-Channel subscribed`);
+      supabase.channel(`lobby-antworten-${aktuelleLobby.id}`).on("postgres_changes", { event:"INSERT", schema:"public", table:"player_answers", filter:`round_id=eq.${aktuelleRunde?.id || '00000000-0000-0000-0000-000000000000'}` }, function() {
+        console.log(`[SUB][${VERSION}] Neue Antwort empfangen`);
+        ladeAntworten();
+      }).subscribe();
+      console.log(`[SUB][${VERSION}] Antworten-Channel subscribed`);
     }
 
     async function ladeLobbyStatus() {
-      console.log("[STATUS] Lobby-Status neu laden für:", aktuelleLobby?.id);
+      console.log(`[STATUS][${VERSION}] Lobby-Status neu laden für:`, aktuelleLobby?.id);
       const { data, error } = await supabase.from("lobbies").select("status").eq("id", aktuelleLobby.id).single();
       if (error || !data) {
-        console.warn("[STATUS] Fehler oder keine Daten:", error);
+        console.warn(`[STATUS][${VERSION}] Fehler oder keine Daten:`, error);
         return;
       }
-      console.log("[STATUS] Neuer Lobby-Status:", data.status);
+      console.log(`[STATUS][${VERSION}] Neuer Lobby-Status:`, data.status);
       aktuelleLobby.status = data.status;
       startButton.disabled = aktuelleLobby.status !== "waiting";
       if (aktuelleLobby.status === "running" && aktuelleRunde) {
-        console.log("[UI] FrageButton aktivieren wegen Status running + vorhandener Runde");
+        console.log(`[UI][${VERSION}] FrageButton aktivieren wegen Status running + vorhandener Runde`);
         frageButton.disabled = false;
       }
     }
 
     async function ladeFrage() {
-      console.log("[FRAGE] ladeFrage aufgerufen für Lobby:", aktuelleLobby?.id);
+      console.log(`[FRAGE][${VERSION}] ladeFrage aufgerufen für Lobby:`, aktuelleLobby?.id);
       if (!aktuelleLobby) {
-        console.log("[FRAGE] ABBRUCH: keine aktuelle Lobby");
+        console.log(`[FRAGE][${VERSION}] ABBRUCH: keine aktuelle Lobby`);
         return;
       }
 
-      console.log("[FRAGE] Hole aktive Runde ...");
+      console.log(`[FRAGE][${VERSION}] Hole aktive Runde ...`);
       const { data: runde, error: rundeError } = await supabase
         .from("rounds")
         .select("*")
@@ -207,69 +227,106 @@
         .limit(1)
         .single();
 
-      console.log("[FRAGE] Runde Ergebnis:", runde, "Fehler:", rundeError || null);
+      console.log(`[FRAGE][${VERSION}] Runde Ergebnis:`, runde, "Fehler:", rundeError || null);
 
       if (rundeError || !runde) {
-        console.log("[FRAGE] Keine aktive Runde gefunden, Frage-Bereich ausblenden");
+        console.log(`[FRAGE][${VERSION}] Keine aktive Runde gefunden, Frage-Bereich ausblenden`);
         frageBereich.style.display = "none";
         aktuelleRunde = null;
         return;
       }
 
-      console.log("[FRAGE] Hole Frage-Daten für question_id:", runde.question_id);
+      aktuelleRunde = runde;
+
+      console.log(`[FRAGE][${VERSION}] Hole Frage-Daten für question_id:`, runde.question_id);
       const { data: frage, error: frageError } = await supabase
         .from("questions")
         .select("display_text, quiz_type")
         .eq("id", runde.question_id)
         .single();
 
-      console.log("[FRAGE] Frage Ergebnis:", frage, "Fehler:", frageError || null);
+      console.log(`[FRAGE][${VERSION}] Frage Ergebnis:`, frage, "Fehler:", frageError || null);
 
       if (frageError || !frage) {
-        console.log("[FRAGE] Frage nicht gefunden, Frage-Bereich ausblenden");
+        console.log(`[FRAGE][${VERSION}] Frage nicht gefunden, Frage-Bereich ausblenden`);
         frageBereich.style.display = "none";
-        aktuelleRunde = null;
         return;
       }
 
-      aktuelleRunde = { ...runde, questions: frage };
       frageBereich.style.display = "block";
       frageText.textContent = frage.display_text || "Frage wird geladen …";
-      console.log("[FRAGE] Frage-Bereich aktualisiert:", frage.display_text);
+      console.log(`[FRAGE][${VERSION}] Frage-Bereich aktualisiert:`, frage.display_text);
 
       if (aktuelleLobby.status === "running") {
-        console.log("[UI] FrageButton aktivieren wegen running + geladener Frage");
+        console.log(`[UI][${VERSION}] FrageButton aktivieren wegen running + geladener Frage`);
         frageButton.disabled = false;
       }
+
+      ladeAntworten();
+    }
+
+    async function ladeAntworten() {
+      console.log(`[ANTWORTEN][${VERSION}] ladeAntworten aufgerufen`);
+      if (!aktuelleRunde) {
+        console.log(`[ANTWORTEN][${VERSION}] ABBRUCH: keine aktuelle Runde`);
+        antwortenBereich.style.display = "none";
+        return;
+      }
+
+      const { data: antworten, error: antwortenError } = await supabase
+        .from("player_answers")
+        .select("*, players(display_name), question_options(option_text, is_correct)")
+        .eq("round_id", aktuelleRunde.id)
+        .order("answered_at", { ascending: false });
+
+      console.log(`[ANTWORTEN][${VERSION}] Antworten Ergebnis:`, antworten, "Fehler:", antwortenError || null);
+
+      if (antwortenError || !antworten || antworten.length === 0) {
+        console.log(`[ANTWORTEN][${VERSION}] Keine Antworten gefunden`);
+        antwortenBereich.style.display = "none";
+        return;
+      }
+
+      antwortenBereich.style.display = "block";
+      antwortenListe.innerHTML = "";
+
+      for (const antwort of antworten) {
+        const div = document.createElement("div");
+        div.className = "antwort " + (antwort.question_options?.is_correct ? "richtig" : "falsch");
+        div.textContent = `${antwort.players?.display_name || "Unbekannt"}: ${antwort.question_options?.option_text || "?"} ${antwort.question_options?.is_correct ? "✓" : "✗"}`;
+        antwortenListe.appendChild(div);
+      }
+
+      console.log(`[ANTWORTEN][${VERSION}] Antworten angezeigt:`, antworten.length);
     }
 
     async function starteQuiz() {
-      console.log("[QUIZ] starteQuiz aufgerufen");
-      console.log("[QUIZ] aktuelleLobby:", aktuelleLobby);
+      console.log(`[QUIZ][${VERSION}] starteQuiz aufgerufen`);
+      console.log(`[QUIZ][${VERSION}] aktuelleLobby:`, aktuelleLobby);
       if (!aktuelleLobby || aktuelleLobby.status !== "waiting") {
-        console.log("[QUIZ] ABBRUCH: Lobby fehlt oder Status nicht waiting");
+        console.log(`[QUIZ][${VERSION}] ABBRUCH: Lobby fehlt oder Status nicht waiting`);
         return;
       }
       startButton.disabled = true;
       status.className = "status";
       status.textContent = "Quiz wird gestartet ...";
-      console.log("[QUIZ] RPC start_lobby aufrufen mit Code:", aktuelleLobby.code);
+      console.log(`[QUIZ][${VERSION}] RPC start_lobby aufrufen mit Code:`, aktuelleLobby.code);
       try {
         const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
         if (error) {
-          console.error("[QUIZ] Fehler von start_lobby:", error);
+          console.error(`[QUIZ][${VERSION}] Fehler von start_lobby:`, error);
           throw error;
         }
-        console.log("[QUIZ] start_lobby erfolgreich, neue Lobby-Daten:", data);
+        console.log(`[QUIZ][${VERSION}] start_lobby erfolgreich, neue Lobby-Daten:`, data);
         aktuelleLobby = data;
         status.className = "status erfolg";
         status.textContent = "Das Quiz läuft.";
         startButton.disabled = true;
 
-        console.log("[QUIZ] ladeFrage nach Start aufrufen");
+        console.log(`[QUIZ][${VERSION}] ladeFrage nach Start aufrufen`);
         ladeFrage();
       } catch (error) {
-        console.error("[QUIZ] Exception in starteQuiz:", error);
+        console.error(`[QUIZ][${VERSION}] Exception in starteQuiz:`, error);
         status.className = "status fehler";
         status.textContent = `Start nicht möglich: ${error.message}`;
         startButton.disabled = false;
@@ -277,33 +334,33 @@
     }
 
     async function starteFrage() {
-      console.log("[FRAGE-START] starteFrage aufgerufen");
-      console.log("[FRAGE-START] aktuelleLobby:", aktuelleLobby);
+      console.log(`[FRAGE-START][${VERSION}] starteFrage aufgerufen`);
+      console.log(`[FRAGE-START][${VERSION}] aktuelleLobby:`, aktuelleLobby);
       if (!aktuelleLobby || aktuelleLobby.status !== "running") {
-        console.log("[FRAGE-START] ABBRUCH: Lobby fehlt oder Status nicht running");
+        console.log(`[FRAGE-START][${VERSION}] ABBRUCH: Lobby fehlt oder Status nicht running`);
         return;
       }
       frageButton.disabled = true;
       status.className = "status";
       status.textContent = "Frage wird gestartet ...";
-      console.log("[FRAGE-START] RPC start_question aufrufen mit Lobby:", aktuelleLobby.id, "Frage:", "1fccb59c-8a4f-4854-8e7e-b5852f70c2be");
+      console.log(`[FRAGE-START][${VERSION}] RPC start_question aufrufen mit Lobby:`, aktuelleLobby.id, "Frage:", "1fccb59c-8a4f-4854-8e7e-b5852f70c2be");
       try {
         const TESTFRAGE_ID = "1fccb59c-8a4f-4854-8e7e-b5852f70c2be";
         const { data, error } = await supabase.rpc("start_question", { p_lobby_id: aktuelleLobby.id, p_question_id: TESTFRAGE_ID });
         if (error) {
-          console.error("[FRAGE-START] Fehler von start_question:", error);
+          console.error(`[FRAGE-START][${VERSION}] Fehler von start_question:`, error);
           throw error;
         }
-        console.log("[FRAGE-START] start_question erfolgreich, Runde:", data);
+        console.log(`[FRAGE-START][${VERSION}] start_question erfolgreich, Runde:`, data);
         aktuelleRunde = data;
         status.className = "status erfolg";
         status.textContent = "Frage läuft.";
         frageButton.disabled = true;
 
-        console.log("[FRAGE-START] ladeFrage nach Start aufrufen");
+        console.log(`[FRAGE-START][${VERSION}] ladeFrage nach Start aufrufen`);
         ladeFrage();
       } catch (error) {
-        console.error("[FRAGE-START] Exception in starteFrage:", error);
+        console.error(`[FRAGE-START][${VERSION}] Exception in starteFrage:`, error);
         status.className = "status fehler";
         status.textContent = `Frage konnte nicht gestartet werden: ${error.message}`;
         frageButton.disabled = false;
@@ -311,11 +368,11 @@
     }
 
     startButton.addEventListener("click", starteQuiz);
-    console.log("[INIT] Event-Listener für Quiz starten registriert");
+    console.log(`[INIT][${VERSION}] Event-Listener für Quiz starten registriert`);
     frageButton.addEventListener("click", starteFrage);
-    console.log("[INIT] Event-Listener für Frage starten registriert");
+    console.log(`[INIT][${VERSION}] Event-Listener für Frage starten registriert`);
     lobbyErstellenButton.addEventListener("click", erstelleLobby);
-    console.log("[INIT] Event-Listener für Lobby erstellen registriert");
+    console.log(`[INIT][${VERSION}] Event-Listener für Lobby erstellen registriert`);
   </script>
 </body>
 </html>
