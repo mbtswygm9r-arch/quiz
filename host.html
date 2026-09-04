@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v6.1</h1>
+  <h1>Quiz-Host v7</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -82,7 +82,7 @@
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v6.1";
+    const VERSION = "v7";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -143,7 +143,6 @@
 
     function zeigeLobby() {
       console.log(`[UI][${VERSION}] Lobby anzeigen`);
-      // KORRIGIERT: join.html statt session.html
       const joinUrl = new URL("join.html", window.location.href);
       joinUrl.searchParams.set("lobby", aktuelleLobby.code);
       lobbyCodeAnzeige.textContent = aktuelleLobby.code;
@@ -316,6 +315,7 @@
         console.log(`[QUIZ][${VERSION}] Weiterleitung auf Session-Seite`);
         const sessionUrl = new URL("session.html", window.location.href);
         sessionUrl.searchParams.set("lobby", aktuelleLobby.code);
+        console.log(`[REDIRECT][${VERSION}] Weiterleitung zu:`, sessionUrl.toString());
         window.location.href = sessionUrl.toString();
       } catch (error) {
         console.error(`[QUIZ][${VERSION}] Exception in starteQuiz:`, error);
