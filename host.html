@@ -18,6 +18,8 @@
     .aktionen { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
     .startButton { background:var(--success); }
     .startButton:disabled { background:var(--disabled); }
+    .frageButton { background:#7c3aed; }
+    .frageButton:disabled { background:var(--disabled); }
   </style>
 </head>
 <body>
@@ -36,6 +38,7 @@
 
     <div class="aktionen">
       <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
+      <button id="frageButton" class="frageButton" type="button" disabled>Erste Frage starten</button>
     </div>
   </section>
 
@@ -48,6 +51,7 @@
 
     const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
     const startButton = document.getElementById("startButton");
+    const frageButton = document.getElementById("frageButton");
     const status = document.getElementById("status");
     const lobbyBereich = document.getElementById("lobbyBereich");
     const lobbyCodeAnzeige = document.getElementById("lobbyCode");
@@ -55,6 +59,7 @@
     const spielerAnzahl = document.getElementById("spielerAnzahl");
     const spielerListe = document.getElementById("spielerListe");
     let aktuelleLobby = null;
+    let aktuelleRunde = null;
 
     async function stelleAnonymenLoginSicher() {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -125,6 +130,7 @@
       ladeSpieler();
       supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
       supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { ladeLobbyStatus(); }).subscribe();
+      supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"INSERT", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) { aktuelleRunde = payload.new; frageButton.disabled = true; }).subscribe();
     }
 
     async function ladeLobbyStatus() {
@@ -153,7 +159,28 @@
       }
     }
 
+    async function starteErsteFrage() {
+      if (!aktuelleLobby || aktuelleLobby.status !== "running") return;
+      frageButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Erste Frage wird gestartet ...";
+      try {
+        const TESTFRAGE_ID = "1fccb59c-8a4f-4854-8e7e-b5852f70c2be";
+        const { data, error } = await supabase.rpc("start_question", { p_lobby_id: aktuelleLobby.id, p_question_id: TESTFRAGE_ID });
+        if (error) throw error;
+        aktuelleRunde = data;
+        status.className = "status erfolg";
+        status.textContent = "Erste Frage läuft.";
+        frageButton.disabled = true;
+      } catch (error) {
+        status.className = "status fehler";
+        status.textContent = `Frage konnte nicht gestartet werden: ${error.message}`;
+        frageButton.disabled = false;
+      }
+    }
+
     startButton.addEventListener("click", starteQuiz);
+    frageButton.addEventListener("click", starteErsteFrage);
     lobbyErstellenButton.addEventListener("click", erstelleLobby);
   </script>
 </body>
