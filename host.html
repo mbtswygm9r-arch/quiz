@@ -155,24 +155,37 @@
 
     async function ladeFrage() {
       if (!aktuelleLobby) return;
-      const { data, error } = await supabase
+
+      const { data: runde, error: rundeError } = await supabase
         .from("rounds")
-        .select("*, questions:question_id(question_text, question_type)")
+        .select("*")
         .eq("lobby_id", aktuelleLobby.id)
         .eq("status", "active")
         .order("started_at", { ascending: false })
         .limit(1)
         .single();
 
-      if (error || !data) {
+      if (rundeError || !runde) {
         frageBereich.style.display = "none";
         aktuelleRunde = null;
         return;
       }
 
-      aktuelleRunde = data;
+      const { data: frage, error: frageError } = await supabase
+        .from("questions")
+        .select("question_text, question_type")
+        .eq("id", runde.question_id)
+        .single();
+
+      if (frageError || !frage) {
+        frageBereich.style.display = "none";
+        aktuelleRunde = null;
+        return;
+      }
+
+      aktuelleRunde = { ...runde, questions: frage };
       frageBereich.style.display = "block";
-      frageText.textContent = data.questions?.question_text || "Frage wird geladen …";
+      frageText.textContent = frage.question_text || "Frage wird geladen …";
 
       if (aktuelleLobby.status === "running") {
         frageButton.disabled = false;
