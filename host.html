@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Deutschrapquiz – Host</title>
   <style>
-    :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; }
+    :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; --success:#15803d; --disabled:#98a2b3; }
     body { max-width:760px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
     button { padding:12px 16px; border:0; border-radius:8px; background:var(--blue); color:#fff; font:inherit; font-weight:bold; cursor:pointer; }
     button:disabled { opacity:.55; cursor:not-allowed; }
@@ -13,8 +13,11 @@
     .code { font-size:2.5rem; font-weight:bold; letter-spacing:.2em; }
     .link { overflow-wrap:anywhere; color:#1d4ed8; }
     .status { min-height:24px; margin-top:16px; font-weight:bold; }
-    .fehler { color:var(--error); }
+    .fehler { color:var(--error); } .erfolg { color:var(--success); }
     li { margin:8px 0; }
+    .aktionen { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
+    .startButton { background:var(--success); }
+    .startButton:disabled { background:var(--disabled); }
   </style>
 </head>
 <body>
@@ -30,6 +33,10 @@
     <p id="joinLink" class="link"></p>
     <h2>Teilnehmer (<span id="spielerAnzahl">0</span>/8)</h2>
     <ul id="spielerListe"></ul>
+
+    <div class="aktionen">
+      <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
+    </div>
   </section>
 
   <script type="module">
@@ -40,6 +47,7 @@
     const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
     const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
+    const startButton = document.getElementById("startButton");
     const status = document.getElementById("status");
     const lobbyBereich = document.getElementById("lobbyBereich");
     const lobbyCodeAnzeige = document.getElementById("lobbyCode");
@@ -110,13 +118,42 @@
         element.textContent = `${spieler.display_name} – ${spieler.score} Punkte`;
         spielerListe.appendChild(element);
       }
+      startButton.disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
     }
 
     function abonniereSpieler() {
       ladeSpieler();
       supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
+      supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { ladeLobbyStatus(); }).subscribe();
     }
 
+    async function ladeLobbyStatus() {
+      const { data, error } = await supabase.from("lobbies").select("status").eq("id", aktuelleLobby.id).single();
+      if (error || !data) return;
+      aktuelleLobby.status = data.status;
+      startButton.disabled = aktuelleLobby.status !== "waiting";
+    }
+
+    async function starteQuiz() {
+      if (!aktuelleLobby || aktuelleLobby.status !== "waiting") return;
+      startButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Quiz wird gestartet ...";
+      try {
+        const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
+        if (error) throw error;
+        aktuelleLobby = data;
+        status.className = "status erfolg";
+        status.textContent = "Das Quiz läuft.";
+        startButton.disabled = true;
+      } catch (error) {
+        status.className = "status fehler";
+        status.textContent = `Start nicht möglich: ${error.message}`;
+        startButton.disabled = false;
+      }
+    }
+
+    startButton.addEventListener("click", starteQuiz);
     lobbyErstellenButton.addEventListener("click", erstelleLobby);
   </script>
 </body>
