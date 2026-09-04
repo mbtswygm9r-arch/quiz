@@ -8,6 +8,7 @@
     :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --success:#15803d; --error:#b42318; }
     body { max-width:640px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
     h1 { margin-bottom:24px; }
+    .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
     .frageBox { padding:24px; border:1px solid var(--border); border-radius:12px; margin-bottom:24px; }
     .frageText { font-size:1.3rem; font-weight:bold; margin-bottom:16px; }
     .mediaBox { margin-bottom:16px; }
@@ -20,10 +21,14 @@
     .status { margin-top:16px; font-weight:bold; min-height:24px; }
     .status.erfolg { color:var(--success); }
     .status.fehler { color:var(--error); }
+    .beendenButton { padding:8px 12px; background:var(--error); color:#fff; border:0; border-radius:6px; font-weight:bold; cursor:pointer; }
   </style>
 </head>
 <body>
-  <h1>Quiz-Session</h1>
+  <div class="header">
+    <h1>Quiz-Session v2</h1>
+    <button id="beendenButton" class="beendenButton" type="button">Session beenden</button>
+  </div>
   <div id="loading">Lade Frage …</div>
 
   <section id="sessionBereich" style="display:none;">
@@ -42,7 +47,7 @@
     const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
     const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
-    const lobbyCode = (new URLSearchParams(window.location.search).get("lobby") || "").toUpperCase().trim();
+    const beendenButton = document.getElementById("beendenButton");
     const loading = document.getElementById("loading");
     const sessionBereich = document.getElementById("sessionBereich");
     const frageText = document.getElementById("frageText");
@@ -50,17 +55,32 @@
     const options = document.getElementById("options");
     const status = document.getElementById("status");
 
+    const VERSION = "v2";
+    console.log(`[INIT][${VERSION}] Session-Skript geladen`);
+
     let aktuelleLobbyId = null;
     let aktuelleRunde = null;
+    let aktuellerLobbyCode = null;
 
     async function stelleAnonymenLoginSicher() {
+      console.log(`[LOGIN][${VERSION}] Prüfe Session ...`);
       const { data: sessionData } = await supabase.auth.getSession();
-      if (sessionData.session) return;
+      if (sessionData.session) {
+        console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, sessionData.session.user.id);
+        return;
+      }
+      console.log(`[LOGIN][${VERSION}] Nicht angemeldet, versuche anonyme Anmeldung ...`);
       const { error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
+      if (error) {
+        console.error(`[LOGIN][${VERSION}] Fehler bei anonymer Anmeldung:`, error);
+        throw error;
+      }
+      console.log(`[LOGIN][${VERSION}] Anonym angemeldet`);
     }
 
     async function ladeLobbyId() {
+      const lobbyCode = (new URLSearchParams(window.location.search).get("lobby") || "").toUpperCase().trim();
+      aktuellerLobbyCode = lobbyCode;
       if (!lobbyCode) return null;
       const { data, error } = await supabase
         .from("lobbies")
@@ -170,6 +190,25 @@
       }
     }
 
+    async function beendeSession() {
+      console.log(`[ENDE][${VERSION}] Session beenden geklickt`);
+      if (!aktuellerLobbyCode) {
+        console.log(`[ENDE][${VERSION}] Kein Lobby-Code vorhanden`);
+        return;
+      }
+      beendenButton.disabled = true;
+      try {
+        const { error } = await supabase.rpc("end_lobby", { p_code: aktuellerLobbyCode });
+        if (error) throw error;
+        console.log(`[ENDE][${VERSION}] Lobby beendet`);
+        window.location.href = "host.html";
+      } catch (error) {
+        console.error(`[ENDE][${VERSION}] Fehler:`, error);
+        alert(`Fehler: ${error.message}`);
+        beendenButton.disabled = false;
+      }
+    }
+
     async function init() {
       await stelleAnonymenLoginSicher();
       aktuelleLobbyId = await ladeLobbyId();
@@ -185,6 +224,8 @@
       ladeSession();
     }
 
+    beendenButton.addEventListener("click", beendeSession);
+    console.log(`[INIT][${VERSION}] Event-Listener für Session beenden registriert`);
     init();
   </script>
 </body>
