@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Deutschrapquiz – Host</title>
+  <title>Deutschrapquiz – Host1</title>
   <style>
     :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; --success:#15803d; --disabled:#98a2b3; }
     body { max-width:760px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
@@ -20,6 +20,9 @@
     .startButton:disabled { background:var(--disabled); }
     .frageButton { background:#7c3aed; }
     .frageButton:disabled { background:var(--disabled); }
+    .frageBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
+    .frageBox h2 { margin:0 0 8px 0; font-size:1.2rem; }
+    .frageBox p { margin:0; }
   </style>
 </head>
 <body>
@@ -40,6 +43,11 @@
       <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
       <button id="frageButton" class="frageButton" type="button" disabled>Frage starten</button>
     </div>
+
+    <section id="frageBereich" class="frageBox">
+      <h2>Aktuelle Frage</h2>
+      <p id="frageText"></p>
+    </section>
   </section>
 
   <script type="module">
@@ -58,6 +66,8 @@
     const joinLinkAnzeige = document.getElementById("joinLink");
     const spielerAnzahl = document.getElementById("spielerAnzahl");
     const spielerListe = document.getElementById("spielerListe");
+    const frageBereich = document.getElementById("frageBereich");
+    const frageText = document.getElementById("frageText");
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
@@ -130,12 +140,7 @@
       ladeSpieler();
       supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
       supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { ladeLobbyStatus(); }).subscribe();
-      supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"INSERT", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) {
-        aktuelleRunde = payload.new;
-        if (aktuelleLobby && aktuelleLobby.status === "running") {
-          frageButton.disabled = false;
-        }
-      }).subscribe();
+      supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function() { ladeFrage(); }).subscribe();
     }
 
     async function ladeLobbyStatus() {
@@ -144,6 +149,32 @@
       aktuelleLobby.status = data.status;
       startButton.disabled = aktuelleLobby.status !== "waiting";
       if (aktuelleLobby.status === "running" && aktuelleRunde) {
+        frageButton.disabled = false;
+      }
+    }
+
+    async function ladeFrage() {
+      if (!aktuelleLobby) return;
+      const { data, error } = await supabase
+        .from("rounds")
+        .select("*, questions(question_text, question_type)")
+        .eq("lobby_id", aktuelleLobby.id)
+        .eq("status", "active")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error || !data) {
+        frageBereich.style.display = "none";
+        aktuelleRunde = null;
+        return;
+      }
+
+      aktuelleRunde = data;
+      frageBereich.style.display = "block";
+      frageText.textContent = data.questions?.question_text || "Frage wird geladen …";
+
+      if (aktuelleLobby.status === "running") {
         frageButton.disabled = false;
       }
     }
@@ -161,22 +192,7 @@
         status.textContent = "Das Quiz läuft.";
         startButton.disabled = true;
 
-        const { data: runden, error: rundenError } = await supabase
-          .from("rounds")
-          .select("*")
-          .eq("lobby_id", aktuelleLobby.id)
-          .eq("status", "active")
-          .order("started_at", { ascending: false })
-          .limit(1);
-
-        if (runden && runden.length > 0) {
-          aktuelleRunde = runden[0];
-          frageButton.disabled = false;
-        }
-
-        if (aktuelleRunde) {
-          frageButton.disabled = false;
-        }
+        ladeFrage();
       } catch (error) {
         status.className = "status fehler";
         status.textContent = `Start nicht möglich: ${error.message}`;
@@ -197,6 +213,8 @@
         status.className = "status erfolg";
         status.textContent = "Frage läuft.";
         frageButton.disabled = true;
+
+        ladeFrage();
       } catch (error) {
         status.className = "status fehler";
         status.textContent = `Frage konnte nicht gestartet werden: ${error.message}`;
