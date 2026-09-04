@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deutschrapquiz – Beitreten</title>
+  <style>
+    :root { --text:#172033; --blue:#2563eb; --error:#b42318; --success:#15803d; }
+    body { max-width:520px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
+    label,input,button { display:block; width:100%; }
+    input,button { min-height:48px; margin-top:8px; padding:0 12px; border-radius:8px; font:inherit; }
+    input { border:1px solid #98a2b3; }
+    button { margin-top:18px; border:0; background:var(--blue); color:#fff; font-weight:bold; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .lobbyCode { font-weight:bold; letter-spacing:.1em; }
+    .status { min-height:24px; margin-top:18px; font-weight:bold; }
+    .fehler { color:var(--error); } .erfolg { color:var(--success); }
+  </style>
+</head>
+<body>
+  <h1>Quiz beitreten</h1>
+  <p>Lobby: <span id="lobbyCodeAnzeige" class="lobbyCode">...</span></p>
+  <form id="beitrittFormular">
+    <label for="spielerName">Dein Name</label>
+    <input id="spielerName" type="text" maxlength="24" required autocomplete="nickname" placeholder="Zum Beispiel Anna">
+    <button id="beitretenButton" type="submit">Lobby beitreten</button>
+  </form>
+  <p id="status" class="status" aria-live="polite"></p>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    const SUPABASE_URL = "https://deqgoakcxiijhcujzems.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    const lobbyCode = (new URLSearchParams(window.location.search).get("lobby") || "").toUpperCase().trim();
+    const lobbyCodeAnzeige = document.getElementById("lobbyCodeAnzeige");
+    const beitrittFormular = document.getElementById("beitrittFormular");
+    const spielerName = document.getElementById("spielerName");
+    const beitretenButton = document.getElementById("beitretenButton");
+    const status = document.getElementById("status");
+    lobbyCodeAnzeige.textContent = lobbyCode || "ungültig";
+
+    async function stelleAnonymenLoginSicher() {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData.session) return;
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+    }
+
+    async function treteLobbyBei(event) {
+      event.preventDefault();
+      const name = spielerName.value.trim();
+      if (!/^[A-Z0-9]{5}$/.test(lobbyCode)) {
+        status.className = "status fehler";
+        status.textContent = "Der Lobbycode in diesem Link ist ungültig.";
+        return;
+      }
+      if (!name) return;
+      beitretenButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Beitritt läuft ...";
+      try {
+        await stelleAnonymenLoginSicher();
+        const { error } = await supabase.rpc("join_lobby", { p_code:lobbyCode, p_display_name:name });
+        if (error) throw error;
+        status.className = "status erfolg";
+        status.textContent = "Du bist der Lobby beigetreten. Warte auf den Host.";
+        spielerName.disabled = true;
+      } catch (error) {
+        status.className = "status fehler";
+        status.textContent = `Beitritt nicht möglich: ${error.message}`;
+        beitretenButton.disabled = false;
+      }
+    }
+    beitrittFormular.addEventListener("submit", treteLobbyBei);
+  </script>
+</body>
+</html>
