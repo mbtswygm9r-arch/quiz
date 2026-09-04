@@ -32,7 +32,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v5</h1>
+  <h1>Quiz-Host v6</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -47,7 +47,7 @@
 
     <div class="aktionen">
       <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
-      <button id="frageButton" class="frageButton" type="button" disabled>Frage starten</button>
+      <button id="beendenButton" type="button" disabled>Session beenden</button>
     </div>
 
     <section id="frageBereich" class="frageBox">
@@ -70,7 +70,7 @@
 
     const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
     const startButton = document.getElementById("startButton");
-    const frageButton = document.getElementById("frageButton");
+    const beendenButton = document.getElementById("beendenButton");
     const status = document.getElementById("status");
     const lobbyBereich = document.getElementById("lobbyBereich");
     const lobbyCodeAnzeige = document.getElementById("lobbyCode");
@@ -84,7 +84,7 @@
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v5";
+    const VERSION = "v6";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -145,7 +145,7 @@
 
     function zeigeLobby() {
       console.log(`[UI][${VERSION}] Lobby anzeigen`);
-      const joinUrl = new URL("join.html", window.location.href);
+      const joinUrl = new URL("session.html", window.location.href);
       joinUrl.searchParams.set("lobby", aktuelleLobby.code);
       lobbyCodeAnzeige.textContent = aktuelleLobby.code;
       joinLinkAnzeige.textContent = joinUrl.toString();
@@ -204,10 +204,6 @@
       console.log(`[STATUS][${VERSION}] Neuer Lobby-Status:`, data.status);
       aktuelleLobby.status = data.status;
       startButton.disabled = aktuelleLobby.status !== "waiting";
-      if (aktuelleLobby.status === "running" && aktuelleRunde) {
-        console.log(`[UI][${VERSION}] FrageButton aktivieren wegen Status running + vorhandener Runde`);
-        frageButton.disabled = false;
-      }
     }
 
     async function ladeFrage() {
@@ -256,13 +252,6 @@
       frageBereich.style.display = "block";
       frageText.textContent = frage.display_text || "Frage wird geladen …";
       console.log(`[FRAGE][${VERSION}] Frage-Bereich aktualisiert:`, frage.display_text);
-
-      if (aktuelleLobby.status === "running") {
-        console.log(`[UI][${VERSION}] FrageButton aktivieren wegen running + geladener Frage`);
-        frageButton.disabled = false;
-      }
-
-      ladeAntworten();
     }
 
     async function ladeAntworten() {
@@ -308,6 +297,7 @@
         return;
       }
       startButton.disabled = true;
+      beendenButton.disabled = true;
       status.className = "status";
       status.textContent = "Quiz wird gestartet ...";
       console.log(`[QUIZ][${VERSION}] RPC start_lobby aufrufen mit Code:`, aktuelleLobby.code);
@@ -322,9 +312,12 @@
         status.className = "status erfolg";
         status.textContent = "Das Quiz läuft.";
         startButton.disabled = true;
+        beendenButton.disabled = false;
 
-        console.log(`[QUIZ][${VERSION}] ladeFrage nach Start aufrufen`);
-        ladeFrage();
+        console.log(`[QUIZ][${VERSION}] Weiterleitung auf Session-Seite`);
+        const sessionUrl = new URL("session.html", window.location.href);
+        sessionUrl.searchParams.set("lobby", aktuelleLobby.code);
+        window.location.href = sessionUrl.toString();
       } catch (error) {
         console.error(`[QUIZ][${VERSION}] Exception in starteQuiz:`, error);
         status.className = "status fehler";
@@ -333,44 +326,36 @@
       }
     }
 
-    async function starteFrage() {
-      console.log(`[FRAGE-START][${VERSION}] starteFrage aufgerufen`);
-      console.log(`[FRAGE-START][${VERSION}] aktuelleLobby:`, aktuelleLobby);
-      if (!aktuelleLobby || aktuelleLobby.status !== "running") {
-        console.log(`[FRAGE-START][${VERSION}] ABBRUCH: Lobby fehlt oder Status nicht running`);
+    async function beendeSession() {
+      console.log(`[ENDE][${VERSION}] beendeSession aufgerufen`);
+      if (!aktuelleLobby) {
+        console.log(`[ENDE][${VERSION}] ABBRUCH: keine Lobby`);
         return;
       }
-      frageButton.disabled = true;
+      beendenButton.disabled = true;
       status.className = "status";
-      status.textContent = "Frage wird gestartet ...";
-      console.log(`[FRAGE-START][${VERSION}] RPC start_question aufrufen mit Lobby:`, aktuelleLobby.id, "Frage:", "1fccb59c-8a4f-4854-8e7e-b5852f70c2be");
+      status.textContent = "Session wird beendet ...";
       try {
-        const TESTFRAGE_ID = "1fccb59c-8a4f-4854-8e7e-b5852f70c2be";
-        const { data, error } = await supabase.rpc("start_question", { p_lobby_id: aktuelleLobby.id, p_question_id: TESTFRAGE_ID });
-        if (error) {
-          console.error(`[FRAGE-START][${VERSION}] Fehler von start_question:`, error);
-          throw error;
-        }
-        console.log(`[FRAGE-START][${VERSION}] start_question erfolgreich, Runde:`, data);
-        aktuelleRunde = data;
+        const { error } = await supabase.rpc("end_lobby", { p_code: aktuelleLobby.code });
+        if (error) throw error;
+        console.log(`[ENDE][${VERSION}] Session beendet`);
         status.className = "status erfolg";
-        status.textContent = "Frage läuft.";
-        frageButton.disabled = true;
-
-        console.log(`[FRAGE-START][${VERSION}] ladeFrage nach Start aufrufen`);
-        ladeFrage();
+        status.textContent = "Session beendet.";
+        setTimeout(() => {
+          window.location.href = "host.html";
+        }, 1000);
       } catch (error) {
-        console.error(`[FRAGE-START][${VERSION}] Exception in starteFrage:`, error);
+        console.error(`[ENDE][${VERSION}] Fehler:`, error);
         status.className = "status fehler";
-        status.textContent = `Frage konnte nicht gestartet werden: ${error.message}`;
-        frageButton.disabled = false;
+        status.textContent = `Fehler: ${error.message}`;
+        beendenButton.disabled = false;
       }
     }
 
     startButton.addEventListener("click", starteQuiz);
     console.log(`[INIT][${VERSION}] Event-Listener für Quiz starten registriert`);
-    frageButton.addEventListener("click", starteFrage);
-    console.log(`[INIT][${VERSION}] Event-Listener für Frage starten registriert`);
+    beendenButton.addEventListener("click", beendeSession);
+    console.log(`[INIT][${VERSION}] Event-Listener für Session beenden registriert`);
     lobbyErstellenButton.addEventListener("click", erstelleLobby);
     console.log(`[INIT][${VERSION}] Event-Listener für Lobby erstellen registriert`);
   </script>
