@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Deutschrapquiz – Host1</title>
+  <title>Deutschrapquiz – Host</title>
   <style>
     :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; --success:#15803d; --disabled:#98a2b3; }
     body { max-width:760px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
@@ -26,7 +26,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host1</h1>
+  <h1>Quiz-Host</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -157,7 +157,7 @@
       if (!aktuelleLobby) return;
       const { data, error } = await supabase
         .from("rounds")
-        .select("*, questions(question_text, question_type)")
+        .select("*, questions:question_id(question_text, question_type)")
         .eq("lobby_id", aktuelleLobby.id)
         .eq("status", "active")
         .order("started_at", { ascending: false })
