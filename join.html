@@ -15,6 +15,9 @@
     .lobbyCode { font-weight:bold; letter-spacing:.1em; }
     .status { min-height:24px; margin-top:18px; font-weight:bold; }
     .fehler { color:var(--error); } .erfolg { color:var(--success); }
+    .frage { margin-top:24px; padding:16px; border:1px solid #d9dee8; border-radius:12px; display:none; }
+    .frage h2 { margin:0 0 8px 0; font-size:1.2rem; }
+    .frage p { margin:0; }
   </style>
 </head>
 <body>
@@ -26,6 +29,11 @@
     <button id="beitretenButton" type="submit">Lobby beitreten</button>
   </form>
   <p id="status" class="status" aria-live="polite"></p>
+
+  <section id="frageBereich" class="frage">
+    <h2>Aktuelle Frage</h2>
+    <p id="frageText">Frage wird geladen …</p>
+  </section>
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
@@ -40,13 +48,39 @@
     const spielerName = document.getElementById("spielerName");
     const beitretenButton = document.getElementById("beitretenButton");
     const status = document.getElementById("status");
+    const frageBereich = document.getElementById("frageBereich");
+    const frageText = document.getElementById("frageText");
     lobbyCodeAnzeige.textContent = lobbyCode || "ungültig";
+
+    let aktuelleLobbyId = null;
+    let aktuelleRunde = null;
 
     async function stelleAnonymenLoginSicher() {
       const { data: sessionData } = await supabase.auth.getSession();
       if (sessionData.session) return;
       const { error } = await supabase.auth.signInAnonymously();
       if (error) throw error;
+    }
+
+    async function ladeFrage() {
+      if (!aktuelleLobbyId) return;
+      const { data, error } = await supabase
+        .from("rounds")
+        .select("*, questions(question_text, question_type)")
+        .eq("lobby_id", aktuelleLobbyId)
+        .eq("status", "active")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error || !data) {
+        frageBereich.style.display = "none";
+        return;
+      }
+
+      aktuelleRunde = data;
+      frageBereich.style.display = "block";
+      frageText.textContent = data.questions?.question_text || "Frage wird geladen …";
     }
 
     async function treteLobbyBei(event) {
@@ -63,11 +97,20 @@
       status.textContent = "Beitritt läuft ...";
       try {
         await stelleAnonymenLoginSicher();
-        const { error } = await supabase.rpc("join_lobby", { p_code:lobbyCode, p_display_name:name });
+        const { data, error } = await supabase.rpc("join_lobby", { p_code:lobbyCode, p_display_name:name });
         if (error) throw error;
+        aktuelleLobbyId = data.id;
         status.className = "status erfolg";
         status.textContent = "Du bist der Lobby beigetreten. Warte auf den Host.";
         spielerName.disabled = true;
+
+        // Runde abonnieren
+        supabase.channel(`lobby-runden-${aktuelleLobbyId}`)
+          .on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobbyId}` }, ladeFrage)
+          .subscribe();
+
+        // Initiale Frage laden
+        ladeFrage();
       } catch (error) {
         status.className = "status fehler";
         status.textContent = `Beitritt nicht möglich: ${error.message}`;
