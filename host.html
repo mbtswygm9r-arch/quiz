@@ -161,6 +161,22 @@
         status.className = "status erfolg";
         status.textContent = "Das Quiz läuft.";
         startButton.disabled = true;
+
+        const { data: runden, error: rundenError } = await supabase
+          .from("rounds")
+          .select("*")
+          .eq("lobby_id", aktuelleLobby.id)
+          .eq("status", "active")
+          .order("started_at", { ascending: false })
+          .limit(1);
+
+        console.log("Runden nach Start:", runden, rundenError || null);
+
+        if (runden && runden.length > 0) {
+          aktuelleRunde = runden[0];
+          frageButton.disabled = false;
+        }
+
         if (aktuelleRunde) {
           frageButton.disabled = false;
         }
