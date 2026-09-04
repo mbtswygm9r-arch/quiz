@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deutschrapquiz – Host</title>
+  <style>
+    :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; }
+    body { max-width:760px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
+    button { padding:12px 16px; border:0; border-radius:8px; background:var(--blue); color:#fff; font:inherit; font-weight:bold; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .lobby { display:none; margin-top:24px; padding:24px; border:1px solid var(--border); border-radius:12px; }
+    .code { font-size:2.5rem; font-weight:bold; letter-spacing:.2em; }
+    .link { overflow-wrap:anywhere; color:#1d4ed8; }
+    .status { min-height:24px; margin-top:16px; font-weight:bold; }
+    .fehler { color:var(--error); }
+    li { margin:8px 0; }
+  </style>
+</head>
+<body>
+  <h1>Quiz-Host</h1>
+  <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
+  <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
+  <p id="status" class="status"></p>
+
+  <section id="lobbyBereich" class="lobby">
+    <p>Lobbycode</p>
+    <div id="lobbyCode" class="code"></div>
+    <h2>Teilnehmer-Link</h2>
+    <p id="joinLink" class="link"></p>
+    <h2>Teilnehmer (<span id="spielerAnzahl">0</span>/8)</h2>
+    <ul id="spielerListe"></ul>
+  </section>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    const SUPABASE_URL = "https://deqgoakcxiijhcujzems.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
+    const status = document.getElementById("status");
+    const lobbyBereich = document.getElementById("lobbyBereich");
+    const lobbyCodeAnzeige = document.getElementById("lobbyCode");
+    const joinLinkAnzeige = document.getElementById("joinLink");
+    const spielerAnzahl = document.getElementById("spielerAnzahl");
+    const spielerListe = document.getElementById("spielerListe");
+    let aktuelleLobby = null;
+
+    async function stelleAnonymenLoginSicher() {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData.session) return;
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+    }
+
+    function erstelleLobbyCode() {
+      const zeichen = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let code = "";
+      for (let index = 0; index < 5; index += 1) {
+        code += zeichen[Math.floor(Math.random() * zeichen.length)];
+      }
+      return code;
+    }
+
+    async function erstelleLobby() {
+      lobbyErstellenButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Lobby wird erstellt ...";
+      try {
+        await stelleAnonymenLoginSicher();
+        for (let versuch = 1; versuch <= 5; versuch += 1) {
+          const { data, error } = await supabase.rpc("create_lobby", { p_code: erstelleLobbyCode() });
+          if (!error) {
+            aktuelleLobby = data;
+            zeigeLobby();
+            abonniereSpieler();
+            status.textContent = "Lobby ist bereit.";
+            return;
+          }
+          if (!error.message.includes("duplicate key") || versuch === 5) throw error;
+        }
+      } catch (error) {
+        status.className = "status fehler";
+        status.textContent = `Fehler beim Erstellen: ${error.message}`;
+        lobbyErstellenButton.disabled = false;
+      }
+    }
+
+    function zeigeLobby() {
+      const joinUrl = new URL("join.html", window.location.href);
+      joinUrl.searchParams.set("lobby", aktuelleLobby.code);
+      lobbyCodeAnzeige.textContent = aktuelleLobby.code;
+      joinLinkAnzeige.textContent = joinUrl.toString();
+      lobbyBereich.style.display = "block";
+    }
+
+    async function ladeSpieler() {
+      const { data, error } = await supabase.from("players").select("display_name, score, joined_at").eq("lobby_id", aktuelleLobby.id).order("joined_at", { ascending:true });
+      if (error) {
+        status.className = "status fehler";
+        status.textContent = `Teilnehmer konnten nicht geladen werden: ${error.message}`;
+        return;
+      }
+      spielerListe.innerHTML = "";
+      spielerAnzahl.textContent = data.length;
+      for (const spieler of data) {
+        const element = document.createElement("li");
+        element.textContent = `${spieler.display_name} – ${spieler.score} Punkte`;
+        spielerListe.appendChild(element);
+      }
+    }
+
+    function abonniereSpieler() {
+      ladeSpieler();
+      supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
+    }
+
+    lobbyErstellenButton.addEventListener("click", erstelleLobby);
+  </script>
+</body>
+</html>
