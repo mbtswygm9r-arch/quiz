@@ -18,8 +18,6 @@
     .aktionen { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
     .startButton { background:var(--success); }
     .startButton:disabled { background:var(--disabled); }
-    .frageButton { background:#7c3aed; }
-    .frageButton:disabled { background:var(--disabled); }
     .frageBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
     .frageBox h2 { margin:0 0 8px 0; font-size:1.2rem; }
     .frageBox p { margin:0; }
@@ -32,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v6</h1>
+  <h1>Quiz-Host v6.1</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -84,7 +82,7 @@
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v6";
+    const VERSION = "v6.1";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -145,7 +143,8 @@
 
     function zeigeLobby() {
       console.log(`[UI][${VERSION}] Lobby anzeigen`);
-      const joinUrl = new URL("session.html", window.location.href);
+      // KORRIGIERT: join.html statt session.html
+      const joinUrl = new URL("join.html", window.location.href);
       joinUrl.searchParams.set("lobby", aktuelleLobby.code);
       lobbyCodeAnzeige.textContent = aktuelleLobby.code;
       joinLinkAnzeige.textContent = joinUrl.toString();
