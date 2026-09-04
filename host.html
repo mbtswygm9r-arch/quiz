@@ -26,7 +26,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v3</h1>
+  <h1>Quiz-Host v4</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -150,4 +150,172 @@
       console.log("[SPIELER] Geladene Spieler:", data);
       spielerListe.innerHTML = "";
       spielerAnzahl.textContent = data.length;
-      for (const
+      for (const spieler of data) {
+        const element = document.createElement("li");
+        element.textContent = `${spieler.display_name} – ${spieler.score} Punkte`;
+        spielerListe.appendChild(element);
+      }
+      const disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
+      console.log("[UI] StartButton disabled setzen auf:", disabled, "weil Spieler:", data.length, "Status:", aktuelleLobby.status);
+      startButton.disabled = disabled;
+    }
+
+    function abonniereSpieler() {
+      console.log("[SUB] Subscriber einrichten für Lobby:", aktuelleLobby?.id);
+      ladeSpieler();
+      supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
+      console.log("[SUB] Spieler-Channel subscribed");
+      supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { console.log("[SUB] Lobby-Status Update empfangen"); ladeLobbyStatus(); }).subscribe();
+      console.log("[SUB] Lobby-Status-Channel subscribed");
+      supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) {
+        console.log("[SUB] Runde Event empfangen:", payload);
+        ladeFrage();
+      }).subscribe();
+      console.log("[SUB] Runden-Channel subscribed");
+    }
+
+    async function ladeLobbyStatus() {
+      console.log("[STATUS] Lobby-Status neu laden für:", aktuelleLobby?.id);
+      const { data, error } = await supabase.from("lobbies").select("status").eq("id", aktuelleLobby.id).single();
+      if (error || !data) {
+        console.warn("[STATUS] Fehler oder keine Daten:", error);
+        return;
+      }
+      console.log("[STATUS] Neuer Lobby-Status:", data.status);
+      aktuelleLobby.status = data.status;
+      startButton.disabled = aktuelleLobby.status !== "waiting";
+      if (aktuelleLobby.status === "running" && aktuelleRunde) {
+        console.log("[UI] FrageButton aktivieren wegen Status running + vorhandener Runde");
+        frageButton.disabled = false;
+      }
+    }
+
+    async function ladeFrage() {
+      console.log("[FRAGE] ladeFrage aufgerufen für Lobby:", aktuelleLobby?.id);
+      if (!aktuelleLobby) {
+        console.log("[FRAGE] ABBRUCH: keine aktuelle Lobby");
+        return;
+      }
+
+      console.log("[FRAGE] Hole aktive Runde ...");
+      const { data: runde, error: rundeError } = await supabase
+        .from("rounds")
+        .select("*")
+        .eq("lobby_id", aktuelleLobby.id)
+        .eq("status", "active")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      console.log("[FRAGE] Runde Ergebnis:", runde, "Fehler:", rundeError || null);
+
+      if (rundeError || !runde) {
+        console.log("[FRAGE] Keine aktive Runde gefunden, Frage-Bereich ausblenden");
+        frageBereich.style.display = "none";
+        aktuelleRunde = null;
+        return;
+      }
+
+      console.log("[FRAGE] Hole Frage-Daten für question_id:", runde.question_id);
+      const { data: frage, error: frageError } = await supabase
+        .from("questions")
+        .select("display_text, quiz_type")
+        .eq("id", runde.question_id)
+        .single();
+
+      console.log("[FRAGE] Frage Ergebnis:", frage, "Fehler:", frageError || null);
+
+      if (frageError || !frage) {
+        console.log("[FRAGE] Frage nicht gefunden, Frage-Bereich ausblenden");
+        frageBereich.style.display = "none";
+        aktuelleRunde = null;
+        return;
+      }
+
+      aktuelleRunde = { ...runde, questions: frage };
+      frageBereich.style.display = "block";
+      frageText.textContent = frage.display_text || "Frage wird geladen …";
+      console.log("[FRAGE] Frage-Bereich aktualisiert:", frage.display_text);
+
+      if (aktuelleLobby.status === "running") {
+        console.log("[UI] FrageButton aktivieren wegen running + geladener Frage");
+        frageButton.disabled = false;
+      }
+    }
+
+    async function starteQuiz() {
+      console.log("[QUIZ] starteQuiz aufgerufen");
+      console.log("[QUIZ] aktuelleLobby:", aktuelleLobby);
+      if (!aktuelleLobby || aktuelleLobby.status !== "waiting") {
+        console.log("[QUIZ] ABBRUCH: Lobby fehlt oder Status nicht waiting");
+        return;
+      }
+      startButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Quiz wird gestartet ...";
+      console.log("[QUIZ] RPC start_lobby aufrufen mit Code:", aktuelleLobby.code);
+      try {
+        const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
+        if (error) {
+          console.error("[QUIZ] Fehler von start_lobby:", error);
+          throw error;
+        }
+        console.log("[QUIZ] start_lobby erfolgreich, neue Lobby-Daten:", data);
+        aktuelleLobby = data;
+        status.className = "status erfolg";
+        status.textContent = "Das Quiz läuft.";
+        startButton.disabled = true;
+
+        console.log("[QUIZ] ladeFrage nach Start aufrufen");
+        ladeFrage();
+      } catch (error) {
+        console.error("[QUIZ] Exception in starteQuiz:", error);
+        status.className = "status fehler";
+        status.textContent = `Start nicht möglich: ${error.message}`;
+        startButton.disabled = false;
+      }
+    }
+
+    async function starteFrage() {
+      console.log("[FRAGE-START] starteFrage aufgerufen");
+      console.log("[FRAGE-START] aktuelleLobby:", aktuelleLobby);
+      if (!aktuelleLobby || aktuelleLobby.status !== "running") {
+        console.log("[FRAGE-START] ABBRUCH: Lobby fehlt oder Status nicht running");
+        return;
+      }
+      frageButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Frage wird gestartet ...";
+      console.log("[FRAGE-START] RPC start_question aufrufen mit Lobby:", aktuelleLobby.id, "Frage:", "1fccb59c-8a4f-4854-8e7e-b5852f70c2be");
+      try {
+        const TESTFRAGE_ID = "1fccb59c-8a4f-4854-8e7e-b5852f70c2be";
+        const { data, error } = await supabase.rpc("start_question", { p_lobby_id: aktuelleLobby.id, p_question_id: TESTFRAGE_ID });
+        if (error) {
+          console.error("[FRAGE-START] Fehler von start_question:", error);
+          throw error;
+        }
+        console.log("[FRAGE-START] start_question erfolgreich, Runde:", data);
+        aktuelleRunde = data;
+        status.className = "status erfolg";
+        status.textContent = "Frage läuft.";
+        frageButton.disabled = true;
+
+        console.log("[FRAGE-START] ladeFrage nach Start aufrufen");
+        ladeFrage();
+      } catch (error) {
+        console.error("[FRAGE-START] Exception in starteFrage:", error);
+        status.className = "status fehler";
+        status.textContent = `Frage konnte nicht gestartet werden: ${error.message}`;
+        frageButton.disabled = false;
+      }
+    }
+
+    startButton.addEventListener("click", starteQuiz);
+    console.log("[INIT] Event-Listener für Quiz starten registriert");
+    frageButton.addEventListener("click", starteFrage);
+    console.log("[INIT] Event-Listener für Frage starten registriert");
+    lobbyErstellenButton.addEventListener("click", erstelleLobby);
+    console.log("[INIT] Event-Listener für Lobby erstellen registriert");
+  </script>
+</body>
+</html>
