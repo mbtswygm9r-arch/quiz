@@ -42,146 +42,160 @@
     </div>
   </section>
 
-  <script type="module">
-    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+<script type="module">
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-    const SUPABASE_URL = "https://deqgoakcxiijhcujzems.supabase.co";
-    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
-    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  const SUPABASE_URL = "https://deqgoakcxiijhcujzems.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
+  const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
-    const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
-    const startButton = document.getElementById("startButton");
-    const frageButton = document.getElementById("frageButton");
-    const status = document.getElementById("status");
-    const lobbyBereich = document.getElementById("lobbyBereich");
-    const lobbyCodeAnzeige = document.getElementById("lobbyCode");
-    const joinLinkAnzeige = document.getElementById("joinLink");
-    const spielerAnzahl = document.getElementById("spielerAnzahl");
-    const spielerListe = document.getElementById("spielerListe");
-    let aktuelleLobby = null;
-    let aktuelleRunde = null;
+  const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
+  const startButton = document.getElementById("startButton");
+  const frageButton = document.getElementById("frageButton");
+  const status = document.getElementById("status");
+  const lobbyBereich = document.getElementById("lobbyBereich");
+  const lobbyCodeAnzeige = document.getElementById("lobbyCode");
+  const joinLinkAnzeige = document.getElementById("joinLink");
+  const spielerAnzahl = document.getElementById("spielerAnzahl");
+  const spielerListe = document.getElementById("spielerListe");
+  let aktuelleLobby = null;
+  let aktuelleRunde = null;
 
-    async function stelleAnonymenLoginSicher() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (sessionData.session) return;
-      const { error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
+  async function stelleAnonymenLoginSicher() {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData.session) return;
+    const { error } = await supabase.auth.signInAnonymously();
+    if (error) throw error;
+  }
+
+  function erstelleLobbyCode() {
+    const zeichen = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let index = 0; index < 5; index += 1) {
+      code += zeichen[Math.floor(Math.random() * zeichen.length)];
     }
+    return code;
+  }
 
-    function erstelleLobbyCode() {
-      const zeichen = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-      let code = "";
-      for (let index = 0; index < 5; index += 1) {
-        code += zeichen[Math.floor(Math.random() * zeichen.length)];
-      }
-      return code;
-    }
-
-    async function erstelleLobby() {
-      lobbyErstellenButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Lobby wird erstellt ...";
-      try {
-        await stelleAnonymenLoginSicher();
-        for (let versuch = 1; versuch <= 5; versuch += 1) {
-          const { data, error } = await supabase.rpc("create_lobby", { p_code: erstelleLobbyCode() });
-          if (!error) {
-            aktuelleLobby = data;
-            zeigeLobby();
-            abonniereSpieler();
-            status.textContent = "Lobby ist bereit.";
-            return;
-          }
-          if (!error.message.includes("duplicate key") || versuch === 5) throw error;
+  async function erstelleLobby() {
+    lobbyErstellenButton.disabled = true;
+    status.className = "status";
+    status.textContent = "Lobby wird erstellt ...";
+    try {
+      await stelleAnonymenLoginSicher();
+      for (let versuch = 1; versuch <= 5; versuch += 1) {
+        const { data, error } = await supabase.rpc("create_lobby", { p_code: erstelleLobbyCode() });
+        if (!error) {
+          aktuelleLobby = data;
+          zeigeLobby();
+          abonniereSpieler();
+          status.textContent = "Lobby ist bereit.";
+          return;
         }
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Fehler beim Erstellen: ${error.message}`;
-        lobbyErstellenButton.disabled = false;
+        if (!error.message.includes("duplicate key") || versuch === 5) throw error;
       }
+    } catch (error) {
+      status.className = "status fehler";
+      status.textContent = `Fehler beim Erstellen: ${error.message}`;
+      lobbyErstellenButton.disabled = false;
     }
+  }
 
-    function zeigeLobby() {
-      const joinUrl = new URL("join.html", window.location.href);
-      joinUrl.searchParams.set("lobby", aktuelleLobby.code);
-      lobbyCodeAnzeige.textContent = aktuelleLobby.code;
-      joinLinkAnzeige.textContent = joinUrl.toString();
-      lobbyBereich.style.display = "block";
+  function zeigeLobby() {
+    const joinUrl = new URL("join.html", window.location.href);
+    joinUrl.searchParams.set("lobby", aktuelleLobby.code);
+    lobbyCodeAnzeige.textContent = aktuelleLobby.code;
+    joinLinkAnzeige.textContent = joinUrl.toString();
+    lobbyBereich.style.display = "block";
+  }
+
+  async function ladeSpieler() {
+    const { data, error } = await supabase.from("players").select("display_name, score, joined_at").eq("lobby_id", aktuelleLobby.id).order("joined_at", { ascending:true });
+    if (error) {
+      status.className = "status fehler";
+      status.textContent = `Teilnehmer konnten nicht geladen werden: ${error.message}`;
+      return;
     }
-
-    async function ladeSpieler() {
-      const { data, error } = await supabase.from("players").select("display_name, score, joined_at").eq("lobby_id", aktuelleLobby.id).order("joined_at", { ascending:true });
-      if (error) {
-        status.className = "status fehler";
-        status.textContent = `Teilnehmer konnten nicht geladen werden: ${error.message}`;
-        return;
-      }
-      spielerListe.innerHTML = "";
-      spielerAnzahl.textContent = data.length;
-      for (const spieler of data) {
-        const element = document.createElement("li");
-        element.textContent = `${spieler.display_name} – ${spieler.score} Punkte`;
-        spielerListe.appendChild(element);
-      }
-      startButton.disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
+    spielerListe.innerHTML = "";
+    spielerAnzahl.textContent = data.length;
+    for (const spieler of data) {
+      const element = document.createElement("li");
+      element.textContent = `${spieler.display_name} – ${spieler.score} Punkte`;
+      spielerListe.appendChild(element);
     }
+    startButton.disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
+  }
 
-    function abonniereSpieler() {
-      ladeSpieler();
-      supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
-      supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { ladeLobbyStatus(); }).subscribe();
-      supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"INSERT", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) { aktuelleRunde = payload.new; frageButton.disabled = true; }).subscribe();
-    }
-
-    async function ladeLobbyStatus() {
-      const { data, error } = await supabase.from("lobbies").select("status").eq("id", aktuelleLobby.id).single();
-      if (error || !data) return;
-      aktuelleLobby.status = data.status;
-      startButton.disabled = aktuelleLobby.status !== "waiting";
-    }
-
-    async function starteQuiz() {
-      if (!aktuelleLobby || aktuelleLobby.status !== "waiting") return;
-      startButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Quiz wird gestartet ...";
-      try {
-        const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
-        if (error) throw error;
-        aktuelleLobby = data;
-        status.className = "status erfolg";
-        status.textContent = "Das Quiz läuft.";
-        startButton.disabled = true;
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Start nicht möglich: ${error.message}`;
-        startButton.disabled = false;
-      }
-    }
-
-    async function starteErsteFrage() {
-      if (!aktuelleLobby || aktuelleLobby.status !== "running") return;
-      frageButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Erste Frage wird gestartet ...";
-      try {
-        const TESTFRAGE_ID = "1fccb59c-8a4f-4854-8e7e-b5852f70c2be";
-        const { data, error } = await supabase.rpc("start_question", { p_lobby_id: aktuelleLobby.id, p_question_id: TESTFRAGE_ID });
-        if (error) throw error;
-        aktuelleRunde = data;
-        status.className = "status erfolg";
-        status.textContent = "Erste Frage läuft.";
-        frageButton.disabled = true;
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Frage konnte nicht gestartet werden: ${error.message}`;
+  function abonniereSpieler() {
+    ladeSpieler();
+    supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
+    supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { ladeLobbyStatus(); }).subscribe();
+    supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"INSERT", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) {
+      aktuelleRunde = payload.new;
+      // Button aktivieren, sobald Runde da ist UND Quiz läuft
+      if (aktuelleLobby && aktuelleLobby.status === "running") {
         frageButton.disabled = false;
       }
-    }
+    }).subscribe();
+  }
 
-    startButton.addEventListener("click", starteQuiz);
-    frageButton.addEventListener("click", starteErsteFrage);
-    lobbyErstellenButton.addEventListener("click", erstelleLobby);
-  </script>
+  async function ladeLobbyStatus() {
+    const { data, error } = await supabase.from("lobbies").select("status").eq("id", aktuelleLobby.id).single();
+    if (error || !data) return;
+    aktuelleLobby.status = data.status;
+    startButton.disabled = aktuelleLobby.status !== "waiting";
+    // Wenn Quiz gerade gestartet wurde und schon eine Runde da ist, Button aktivieren
+    if (aktuelleLobby.status === "running" && aktuelleRunde) {
+      frageButton.disabled = false;
+    }
+  }
+
+  async function starteQuiz() {
+    if (!aktuelleLobby || aktuelleLobby.status !== "waiting") return;
+    startButton.disabled = true;
+    status.className = "status";
+    status.textContent = "Quiz wird gestartet ...";
+    try {
+      const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
+      if (error) throw error;
+      aktuelleLobby = data;
+      status.className = "status erfolg";
+      status.textContent = "Das Quiz läuft.";
+      startButton.disabled = true;
+      // Falls schon eine Runde da ist (selten, aber möglich), Button aktivieren
+      if (aktuelleRunde) {
+        frageButton.disabled = false;
+      }
+    } catch (error) {
+      status.className = "status fehler";
+      status.textContent = `Start nicht möglich: ${error.message}`;
+      startButton.disabled = false;
+    }
+  }
+
+  async function starteErsteFrage() {
+    if (!aktuelleLobby || aktuelleLobby.status !== "running") return;
+    frageButton.disabled = true;
+    status.className = "status";
+    status.textContent = "Erste Frage wird gestartet ...";
+    try {
+      const TESTFRAGE_ID = "1fccb59c-8a4f-4854-8e7e-b5852f70c2be";
+      const { data, error } = await supabase.rpc("start_question", { p_lobby_id: aktuelleLobby.id, p_question_id: TESTFRAGE_ID });
+      if (error) throw error;
+      aktuelleRunde = data;
+      status.className = "status erfolg";
+      status.textContent = "Erste Frage läuft.";
+      frageButton.disabled = true;
+    } catch (error) {
+      status.className = "status fehler";
+      status.textContent = `Frage konnte nicht gestartet werden: ${error.message}`;
+      frageButton.disabled = false;
+    }
+  }
+
+  startButton.addEventListener("click", starteQuiz);
+  frageButton.addEventListener("click", starteErsteFrage);
+  lobbyErstellenButton.addEventListener("click", erstelleLobby);
+</script>
 </body>
 </html>
