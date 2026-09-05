@@ -16,7 +16,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz beitreten v4</h1>
+  <h1>Quiz beitreten v5</h1>
   <div id="nameBox" class="box">
     <p>Gib deinen Namen ein, um dem Quiz beizutreten.</p>
     <input id="nameInput" type="text" placeholder="Dein Name" maxlength="30" />
@@ -54,7 +54,7 @@
     const wartenBox = document.getElementById("wartenBox");
     const wartenStatus = document.getElementById("wartenStatus");
 
-    const VERSION = "v4";
+    const VERSION = "v5";
     console.log(`[INIT][${VERSION}] Join-Skript geladen`);
 
     let aktuelleLobbyId = null;
@@ -89,7 +89,6 @@
       nameBox.style.display = "none";
       joinBox.style.display = "block";
 
-      // Wenn Code in URL, automatisch einfügen
       const urlCode = new URLSearchParams(window.location.search).get("lobby");
       if (urlCode) {
         console.log(`[INIT][${VERSION}] Code aus URL:`, urlCode);
@@ -114,12 +113,15 @@
       joinStatus.textContent = "Trete Lobby bei …";
       try {
         await stelleAnonymenLoginSicher();
-        const { data: lobbyData, error: lobbyError } = await supabase.rpc("join_lobby", { p_code: code, p_display_name: name });
-        if (lobbyError) throw lobbyError;
-        console.log(`[JOIN][${VERSION}] Erfolgreich beigetreten:`, lobbyData);
-        aktuelleLobbyId = lobbyData.lobby_id;
+        const { data, error } = await supabase.rpc("join_lobby", { p_code: code, p_display_name: name });
+        if (error) throw error;
+        console.log(`[JOIN][${VERSION}] Erfolgreich beigetreten:`, data);
+        
+        // data ist ein Array mit einem Objekt {lobby_id, player_id}
+        aktuelleLobbyId = data[0].lobby_id;
+        spielerId = data[0].player_id;
         aktuellerLobbyCode = code;
-        spielerId = lobbyData.player_id;
+        
         joinBox.style.display = "none";
         wartenBox.style.display = "block";
         wartenStatus.textContent = `Lobby: ${code}`;
