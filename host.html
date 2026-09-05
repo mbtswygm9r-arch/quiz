@@ -15,7 +15,7 @@
     .status { min-height:24px; margin-top:16px; font-weight:bold; }
     .fehler { color:var(--error); } .erfolg { color:var(--success); }
     li { margin:8px 0; }
-    .aktionen { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
+    .aktionen { margin-top:24px; display:flex; gap:10px; flex-wrap:wrap; }
     .startButton { background:var(--success); }
     .startButton:disabled { background:var(--disabled); }
     .frageBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
@@ -45,36 +45,61 @@
     .nextButton:disabled { background:var(--disabled); }
     .aufloesenButton { background:var(--pending); color:#000; }
     .aufloesenButton:disabled { background:var(--disabled); }
+    .quizBereich { display:none; }
+    .quizBereich.visible { display:block; }
+    .infoBox { background:#f0f4ff; padding:16px; border-radius:8px; margin-bottom:24px; }
+    .infoBox h2 { margin:0 0 8px 0; font-size:1.1rem; }
+    .infoBox p { margin:0; }
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v9.1</h1>
-  <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
-  <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
-  <p id="status" class="status"></p>
+  <h1>Quiz-Host v10</h1>
 
-  <section id="lobbyBereich" class="lobby">
-    <p>Lobbycode</p>
-    <div id="lobbyCode" class="code"></div>
-    <h2>Teilnehmer-Link</h2>
-    <p id="joinLink" class="link"></p>
+  <!-- Vor Quiz-Start -->
+  <section id="vorQuiz">
+    <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
+    <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
+    <p id="status" class="status"></p>
 
-    <section id="spielerBox" class="spielerBox">
-      <h2>Teilnehmer (<span id="spielerAnzahl">0</span>/8)</h2>
-      <ul id="spielerListe" class="spielerListe"></ul>
+    <section id="lobbyBereich" class="lobby">
+      <p>Lobbycode</p>
+      <div id="lobbyCode" class="code"></div>
+      <h2>Teilnehmer-Link</h2>
+      <p id="joinLink" class="link"></p>
+
+      <section id="spielerBox" class="spielerBox">
+        <h2>Teilnehmer (<span id="spielerAnzahl">0</span>/8)</h2>
+        <ul id="spielerListe" class="spielerListe"></ul>
+      </section>
+
+      <div class="aktionen">
+        <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
+      </div>
     </section>
+  </section>
 
-    <div class="aktionen">
-      <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
-      <button id="nextButton" class="nextButton" type="button" disabled>Nächste Frage</button>
-      <button id="aufloesenButton" class="aufloesenButton" type="button" disabled>Auflösen</button>
-      <button id="beendenButton" type="button" disabled>Session beenden</button>
+  <!-- Nach Quiz-Start -->
+  <section id="quizBereich" class="quizBereich">
+    <div class="infoBox">
+      <h2>Quiz läuft</h2>
+      <p>Warte auf Antworten der Teilnehmer …</p>
     </div>
 
     <section id="frageBereich" class="frageBox">
       <h2>Aktuelle Frage</h2>
       <p id="frageText"></p>
     </section>
+
+    <section id="spielerBoxQuiz" class="spielerBox">
+      <h2>Teilnehmer (<span id="spielerAnzahlQuiz">0</span>)</h2>
+      <ul id="spielerListeQuiz" class="spielerListe"></ul>
+    </section>
+
+    <div class="aktionen">
+      <button id="aufloesenButton" class="aufloesenButton" type="button" disabled>Auflösen</button>
+      <button id="nextButton" class="nextButton" type="button" disabled>Nächste Frage</button>
+      <button id="beendenButton" type="button">Session beenden</button>
+    </div>
 
     <section id="antwortenBereich" class="antwortenBox">
       <h2>Antworten</h2>
@@ -100,13 +125,17 @@
     const aufloesenButton = document.getElementById("aufloesenButton");
     const beendenButton = document.getElementById("beendenButton");
     const status = document.getElementById("status");
+    const vorQuiz = document.getElementById("vorQuiz");
     const lobbyBereich = document.getElementById("lobbyBereich");
     const lobbyCodeAnzeige = document.getElementById("lobbyCode");
     const joinLinkAnzeige = document.getElementById("joinLink");
     const spielerAnzahl = document.getElementById("spielerAnzahl");
     const spielerListe = document.getElementById("spielerListe");
+    const quizBereich = document.getElementById("quizBereich");
     const frageBereich = document.getElementById("frageBereich");
     const frageText = document.getElementById("frageText");
+    const spielerAnzahlQuiz = document.getElementById("spielerAnzahlQuiz");
+    const spielerListeQuiz = document.getElementById("spielerListeQuiz");
     const antwortenBereich = document.getElementById("antwortenBereich");
     const antwortenListe = document.getElementById("antwortenListe");
     const leaderboardBereich = document.getElementById("leaderboardBereich");
@@ -114,7 +143,7 @@
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v9.1";
+    const VERSION = "v10";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -193,11 +222,11 @@
       }
       console.log(`[SPIELER][${VERSION}] Geladene Spieler:`, data);
       spielerAnzahl.textContent = data.length;
+      spielerAnzahlQuiz.textContent = data.length;
       ladeSpielerMitStatus(data);
       const disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
       console.log(`[UI][${VERSION}] StartButton disabled setzen auf:`, disabled);
       startButton.disabled = disabled;
-      ladeLeaderboard();
     }
 
     async function ladeSpielerMitStatus(spieler) {
@@ -210,6 +239,12 @@
           li.textContent = `${s.display_name} – ${s.score} Pkt`;
           spielerListe.appendChild(li);
         }
+        spielerListeQuiz.innerHTML = "";
+        for (const s of spieler) {
+          const li = document.createElement("li");
+          li.textContent = `${s.display_name} – ${s.score} Pkt`;
+          spielerListeQuiz.appendChild(li);
+        }
         return;
       }
 
@@ -221,8 +256,20 @@
       console.log(`[SPIELER][${VERSION}] Antworten:`, antworten, "Fehler:", error);
 
       const beantwortetIds = new Set(antworten?.map(a => a.player_id) || []);
+      const alleBeantwortet = beantwortetIds.size === spieler.length;
 
+      console.log(`[SPIELER][${VERSION}] Beantwortet:`, beantwortetIds.size, "von", spieler.length, "→ alleBeantwortet:", alleBeantwortet);
+
+      // Liste vor Quiz-Start
       spielerListe.innerHTML = "";
+      for (const s of spieler) {
+        const li = document.createElement("li");
+        li.textContent = `${s.display_name} – ${s.score} Pkt`;
+        spielerListe.appendChild(li);
+      }
+
+      // Liste während Quiz
+      spielerListeQuiz.innerHTML = "";
       for (const s of spieler) {
         const li = document.createElement("li");
         const nameSpan = document.createElement("span");
@@ -232,8 +279,12 @@
         statusSpan.textContent = beantwortetIds.has(s.id) ? "✓" : "⏳";
         li.appendChild(nameSpan);
         li.appendChild(statusSpan);
-        spielerListe.appendChild(li);
+        spielerListeQuiz.appendChild(li);
       }
+
+      // "Auflösen" Button aktivieren, wenn alle geantwortet haben
+      aufloesenButton.disabled = !alleBeantwortet;
+      console.log(`[UI][${VERSION}] aufloesenButton.disabled:`, !alleBeantwortet);
     }
 
     function ladeLeaderboard() {
@@ -283,7 +334,6 @@
       supabase.channel(`lobby-antworten-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"player_answers", filter:`round_id=eq.${aktuelleRunde?.id || '00000000-0000-0000-0000-000000000000'}` }, function() {
         console.log(`[SUB][${VERSION}] Antwort Event empfangen`);
         ladeSpieler();
-        ladeAntworten();
       }).subscribe();
       console.log(`[SUB][${VERSION}] Antworten-Channel subscribed`);
     }
@@ -297,6 +347,12 @@
       }
       console.log(`[STATUS][${VERSION}] Neuer Lobby-Status:`, data.status);
       aktuelleLobby.status = data.status;
+      
+      if (aktuelleLobby.status === "running") {
+        vorQuiz.style.display = "none";
+        quizBereich.classList.add("visible");
+      }
+      
       startButton.disabled = aktuelleLobby.status !== "waiting";
     }
 
@@ -326,6 +382,7 @@
         nextButton.disabled = true;
         aufloesenButton.disabled = true;
         antwortenBereich.style.display = "none";
+        leaderboardBereich.style.display = "none";
         return;
       }
 
@@ -333,7 +390,6 @@
       console.log(`[FRAGE][${VERSION}] Aktuelle Runde gesetzt:`, runde.id);
 
       nextButton.disabled = false;
-      aufloesenButton.disabled = false;
 
       console.log(`[FRAGE][${VERSION}] Hole Frage-Daten ...`);
       const { data: frage, error: frageError } = await supabase
@@ -356,29 +412,7 @@
 
       ladeSpieler();
       antwortenBereich.style.display = "none";
-    }
-
-    async function ladeAntworten() {
-      console.log(`[ANTWORTEN][${VERSION}] ladeAntworten aufgerufen`);
-      if (!aktuelleRunde) {
-        console.log(`[ANTWORTEN][${VERSION}] ABBRUCH: keine aktuelle Runde`);
-        antwortenBereich.style.display = "none";
-        return;
-      }
-
-      const { data: antworten, error: antwortenError } = await supabase
-        .from("player_answers")
-        .select("*, players(display_name), question_options(option_text, is_correct)")
-        .eq("round_id", aktuelleRunde.id)
-        .order("answered_at", { ascending: false });
-
-      console.log(`[ANTWORTEN][${VERSION}] Antworten Ergebnis:`, antworten, "Fehler:", antwortenError || null);
-
-      if (antwortenError || !antworten || antworten.length === 0) {
-        console.log(`[ANTWORTEN][${VERSION}] Keine Antworten gefunden`);
-        antwortenBereich.style.display = "none";
-        return;
-      }
+      leaderboardBereich.style.display = "none";
     }
 
     function zeigeAntworten() {
@@ -415,7 +449,6 @@
         return;
       }
       startButton.disabled = true;
-      beendenButton.disabled = true;
       status.className = "status";
       status.textContent = "Quiz wird gestartet ...";
       console.log(`[QUIZ][${VERSION}] RPC start_lobby aufrufen`);
@@ -426,6 +459,8 @@
         aktuelleLobby = data;
         status.className = "status erfolg";
         status.textContent = "Das Quiz läuft.";
+        vorQuiz.style.display = "none";
+        quizBereich.classList.add("visible");
         ladeFrage();
       } catch (error) {
         console.error(`[QUIZ][${VERSION}] Exception:`, error);
@@ -442,6 +477,7 @@
         return;
       }
       nextButton.disabled = true;
+      aufloesenButton.disabled = true;
       status.className = "status";
       status.textContent = "Nächste Frage wird geladen ...";
       try {
