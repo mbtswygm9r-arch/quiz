@@ -18,15 +18,17 @@
     .option:hover { background:#f0f4ff; }
     .option.correct { background:var(--success); color:#fff; border-color:var(--success); }
     .option.wrong { background:var(--error); color:#fff; border-color:var(--error); }
+    .option:disabled { opacity:.7; cursor:not-allowed; }
     .status { margin-top:16px; font-weight:bold; min-height:24px; }
     .status.erfolg { color:var(--success); }
     .status.fehler { color:var(--error); }
     .beendenButton { padding:8px 12px; background:var(--error); color:#fff; border:0; border-radius:6px; font-weight:bold; cursor:pointer; }
+    .warteText { text-align:center; padding:24px; color:#666; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>Quiz-Session v3</h1>
+    <h1>Quiz-Session v4</h1>
     <button id="beendenButton" class="beendenButton" type="button">Session beenden</button>
   </div>
   <div id="loading">Lade Frage …</div>
@@ -40,6 +42,13 @@
     </section>
   </section>
 
+  <section id="warteBereich" style="display:none;">
+    <div class="warteText">
+      <p>✓ Antwort gespeichert!</p>
+      <p>Warte auf nächste Frage …</p>
+    </div>
+  </section>
+
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
@@ -50,17 +59,19 @@
     const beendenButton = document.getElementById("beendenButton");
     const loading = document.getElementById("loading");
     const sessionBereich = document.getElementById("sessionBereich");
+    const warteBereich = document.getElementById("warteBereich");
     const frageText = document.getElementById("frageText");
     const mediaBox = document.getElementById("mediaBox");
     const options = document.getElementById("options");
     const status = document.getElementById("status");
 
-    const VERSION = "v3";
+    const VERSION = "v4";
     console.log(`[INIT][${VERSION}] Session-Skript geladen`);
 
     let aktuelleLobbyId = null;
     let aktuelleRunde = null;
     let aktuellerLobbyCode = null;
+    let bereitsBeantwortet = false;
 
     async function stelleAnonymenLoginSicher() {
       console.log(`[LOGIN][${VERSION}] Prüfe Session ...`);
@@ -122,13 +133,30 @@
         console.log(`[SESSION][${VERSION}] Keine aktive Runde gefunden`);
         loading.textContent = "Warte auf Host …";
         sessionBereich.style.display = "none";
+        warteBereich.style.display = "none";
         return;
+      }
+
+      // Wenn Runde gewechselt hat, Reset
+      if (aktuelleRunde?.id !== runde.id) {
+        console.log(`[SESSION][${VERSION}] Neue Runde erkannt, Reset`);
+        bereitsBeantwortet = false;
+        warteBereich.style.display = "none";
       }
 
       aktuelleRunde = runde;
       console.log(`[SESSION][${VERSION}] Aktuelle Runde gesetzt:`, runde.id);
 
-      console.log(`[SESSION][${VERSION}] Hole Frage-Daten für question_id:`, runde.question_id);
+      // Wenn bereits beantwortet, Warte-Bereich zeigen
+      if (bereitsBeantwortet) {
+        console.log(`[SESSION][${VERSION}] Bereits beantwortet, zeige Warte-Bereich`);
+        sessionBereich.style.display = "none";
+        warteBereich.style.display = "block";
+        loading.style.display = "none";
+        return;
+      }
+
+      console.log(`[SESSION][${VERSION}] Hole Frage-Daten ...`);
       const { data: frage, error: frageError } = await supabase
         .from("questions")
         .select("display_text, quiz_type")
@@ -141,6 +169,7 @@
         console.log(`[SESSION][${VERSION}] Frage nicht gefunden`);
         loading.textContent = "Fehler beim Laden der Frage …";
         sessionBereich.style.display = "none";
+        warteBereich.style.display = "none";
         return;
       }
 
@@ -157,6 +186,7 @@
         console.log(`[SESSION][${VERSION}] Optionen nicht gefunden`);
         loading.textContent = "Fehler beim Laden der Antworten …";
         sessionBereich.style.display = "none";
+        warteBereich.style.display = "none";
         return;
       }
 
@@ -171,6 +201,7 @@
 
       loading.style.display = "none";
       sessionBereich.style.display = "block";
+      warteBereich.style.display = "none";
       frageText.textContent = frage.display_text;
       console.log(`[SESSION][${VERSION}] Frage angezeigt:`, frage.display_text);
 
@@ -193,6 +224,8 @@
         btn.className = "option";
         btn.textContent = opt.option_text;
         btn.addEventListener("click", async () => {
+          // Alle Buttons deaktivieren
+          options.querySelectorAll(".option").forEach(b => b.disabled = true);
           status.className = "status";
           status.textContent = "Antwort wird gespeichert …";
           try {
@@ -201,6 +234,7 @@
               p_option_id: opt.id
             });
             if (error) throw error;
+            bereitsBeantwortet = true;
             if (opt.is_correct) {
               status.className = "status erfolg";
               status.textContent = "Richtig!";
@@ -210,9 +244,15 @@
               status.textContent = "Leider falsch.";
               btn.classList.add("wrong");
             }
+            // Nach kurzer Zeit Warte-Bereich zeigen
+            setTimeout(() => {
+              sessionBereich.style.display = "none";
+              warteBereich.style.display = "block";
+            }, 2000);
           } catch (error) {
             status.className = "status fehler";
             status.textContent = `Fehler: ${error.message}`;
+            options.querySelectorAll(".option").forEach(b => b.disabled = false);
           }
         });
         options.appendChild(btn);
