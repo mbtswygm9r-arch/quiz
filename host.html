@@ -48,7 +48,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v9</h1>
+  <h1>Quiz-Host v9.1</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -114,7 +114,7 @@
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v9";
+    const VERSION = "v9.1";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -201,7 +201,7 @@
     }
 
     async function ladeSpielerMitStatus(spieler) {
-      console.log(`[SPIELER][${VERSION}] ladeSpielerMitStatus mit`, spieler.length, "Spielern`);
+      console.log(`[SPIELER][${VERSION}] ladeSpielerMitStatus mit`, spieler.length, "Spielern");
       if (!aktuelleRunde) {
         console.log(`[SPIELER][${VERSION}] Keine aktive Runde, zeige nur Namen`);
         spielerListe.innerHTML = "";
@@ -213,7 +213,6 @@
         return;
       }
 
-      // Hole Antworten für diese Runde
       const { data: antworten, error } = await supabase
         .from("player_answers")
         .select("player_id")
@@ -333,7 +332,6 @@
       aktuelleRunde = runde;
       console.log(`[FRAGE][${VERSION}] Aktuelle Runde gesetzt:`, runde.id);
 
-      // Buttons aktivieren
       nextButton.disabled = false;
       aufloesenButton.disabled = false;
 
@@ -356,10 +354,7 @@
       frageText.textContent = frage.display_text || "Frage wird geladen …";
       console.log(`[FRAGE][${VERSION}] Frage angezeigt:`, frage.display_text);
 
-      // Spieler-Liste mit Status neu laden
       ladeSpieler();
-
-      // Antworten ausblenden (bis "Auflösen" geklickt wird)
       antwortenBereich.style.display = "none";
     }
 
@@ -384,9 +379,6 @@
         antwortenBereich.style.display = "none";
         return;
       }
-
-      // Nur anzeigen, wenn "Auflösen" geklickt wurde (wird über Button-Status gesteuert)
-      // Standardmäßig ausgeblendet
     }
 
     function zeigeAntworten() {
