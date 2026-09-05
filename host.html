@@ -53,7 +53,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v10</h1>
+  <h1>Quiz-Host v10.1</h1>
 
   <!-- Vor Quiz-Start -->
   <section id="vorQuiz">
@@ -143,7 +143,7 @@
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v10";
+    const VERSION = "v10.1";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -260,7 +260,6 @@
 
       console.log(`[SPIELER][${VERSION}] Beantwortet:`, beantwortetIds.size, "von", spieler.length, "→ alleBeantwortet:", alleBeantwortet);
 
-      // Liste vor Quiz-Start
       spielerListe.innerHTML = "";
       for (const s of spieler) {
         const li = document.createElement("li");
@@ -268,7 +267,6 @@
         spielerListe.appendChild(li);
       }
 
-      // Liste während Quiz
       spielerListeQuiz.innerHTML = "";
       for (const s of spieler) {
         const li = document.createElement("li");
@@ -282,7 +280,6 @@
         spielerListeQuiz.appendChild(li);
       }
 
-      // "Auflösen" Button aktivieren, wenn alle geantwortet haben
       aufloesenButton.disabled = !alleBeantwortet;
       console.log(`[UI][${VERSION}] aufloesenButton.disabled:`, !alleBeantwortet);
     }
@@ -498,7 +495,17 @@
 
     async function aufloesen() {
       console.log(`[AUFLOESEN][${VERSION}] aufloesen aufgerufen`);
+      
+      if (aktuelleRunde) {
+        console.log(`[AUFLOESEN][${VERSION}] Vergebe Punkte für Runde:`, aktuelleRunde.id);
+        const { error } = await supabase.rpc("vergebe_punkte", { p_round_id: aktuelleRunde.id });
+        if (error) {
+          console.error(`[AUFLOESEN][${VERSION}] Fehler beim Punkte vergeben:`, error);
+        }
+      }
+      
       zeigeAntworten();
+      ladeSpieler();
     }
 
     async function beendeSession() {
