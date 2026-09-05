@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Deutschrapquiz – Host</title>
   <style>
-    :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; --success:#15803d; --disabled:#98a2b3; }
+    :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; --success:#15803d; --disabled:#98a2b3; --pending:#f59e0b; }
     body { max-width:760px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
     button { padding:12px 16px; border:0; border-radius:8px; background:var(--blue); color:#fff; font:inherit; font-weight:bold; cursor:pointer; }
     button:disabled { opacity:.55; cursor:not-allowed; }
@@ -27,16 +27,28 @@
     .antwort:last-child { border-bottom:none; }
     .antwort.richtig { color:var(--success); }
     .antwort.falsch { color:var(--error); }
+    .spielerBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; }
+    .spielerBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
+    .spielerListe { list-style:none; padding:0; margin:0; }
+    .spielerListe li { padding:8px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+    .spielerListe li:last-child { border-bottom:none; }
+    .spielerStatus { font-weight:bold; }
+    .spielerStatus.ja { color:var(--success); }
+    .spielerStatus.nein { color:var(--pending); }
     .leaderboardBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
     .leaderboardBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
     .leaderboard { list-style:none; padding:0; }
     .leaderboard li { padding:8px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
     .leaderboard li:last-child { border-bottom:none; }
     .leaderboard li:first-child { font-weight:bold; background:#f0fdf4; }
+    .nextButton { background:#7c3aed; }
+    .nextButton:disabled { background:var(--disabled); }
+    .aufloesenButton { background:var(--pending); color:#000; }
+    .aufloesenButton:disabled { background:var(--disabled); }
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v8</h1>
+  <h1>Quiz-Host v9</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -46,11 +58,16 @@
     <div id="lobbyCode" class="code"></div>
     <h2>Teilnehmer-Link</h2>
     <p id="joinLink" class="link"></p>
-    <h2>Teilnehmer (<span id="spielerAnzahl">0</span>/8)</h2>
-    <ul id="spielerListe"></ul>
+
+    <section id="spielerBox" class="spielerBox">
+      <h2>Teilnehmer (<span id="spielerAnzahl">0</span>/8)</h2>
+      <ul id="spielerListe" class="spielerListe"></ul>
+    </section>
 
     <div class="aktionen">
       <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
+      <button id="nextButton" class="nextButton" type="button" disabled>Nächste Frage</button>
+      <button id="aufloesenButton" class="aufloesenButton" type="button" disabled>Auflösen</button>
       <button id="beendenButton" type="button" disabled>Session beenden</button>
     </div>
 
@@ -79,6 +96,8 @@
 
     const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
     const startButton = document.getElementById("startButton");
+    const nextButton = document.getElementById("nextButton");
+    const aufloesenButton = document.getElementById("aufloesenButton");
     const beendenButton = document.getElementById("beendenButton");
     const status = document.getElementById("status");
     const lobbyBereich = document.getElementById("lobbyBereich");
@@ -95,7 +114,7 @@
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v8";
+    const VERSION = "v9";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -173,17 +192,49 @@
         return;
       }
       console.log(`[SPIELER][${VERSION}] Geladene Spieler:`, data);
-      spielerListe.innerHTML = "";
       spielerAnzahl.textContent = data.length;
-      for (const spieler of data) {
-        const element = document.createElement("li");
-        element.textContent = `${spieler.display_name} – ${spieler.score} Punkte`;
-        spielerListe.appendChild(element);
-      }
+      ladeSpielerMitStatus(data);
       const disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
-      console.log(`[UI][${VERSION}] StartButton disabled setzen auf:`, disabled, "weil Spieler:", data.length, "Status:", aktuelleLobby.status);
+      console.log(`[UI][${VERSION}] StartButton disabled setzen auf:`, disabled);
       startButton.disabled = disabled;
       ladeLeaderboard();
+    }
+
+    async function ladeSpielerMitStatus(spieler) {
+      console.log(`[SPIELER][${VERSION}] ladeSpielerMitStatus mit`, spieler.length, "Spielern`);
+      if (!aktuelleRunde) {
+        console.log(`[SPIELER][${VERSION}] Keine aktive Runde, zeige nur Namen`);
+        spielerListe.innerHTML = "";
+        for (const s of spieler) {
+          const li = document.createElement("li");
+          li.textContent = `${s.display_name} – ${s.score} Pkt`;
+          spielerListe.appendChild(li);
+        }
+        return;
+      }
+
+      // Hole Antworten für diese Runde
+      const { data: antworten, error } = await supabase
+        .from("player_answers")
+        .select("player_id")
+        .eq("round_id", aktuelleRunde.id);
+
+      console.log(`[SPIELER][${VERSION}] Antworten:`, antworten, "Fehler:", error);
+
+      const beantwortetIds = new Set(antworten?.map(a => a.player_id) || []);
+
+      spielerListe.innerHTML = "";
+      for (const s of spieler) {
+        const li = document.createElement("li");
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = `${s.display_name} – ${s.score} Pkt`;
+        const statusSpan = document.createElement("span");
+        statusSpan.className = "spielerStatus " + (beantwortetIds.has(s.id) ? "ja" : "nein");
+        statusSpan.textContent = beantwortetIds.has(s.id) ? "✓" : "⏳";
+        li.appendChild(nameSpan);
+        li.appendChild(statusSpan);
+        spielerListe.appendChild(li);
+      }
     }
 
     function ladeLeaderboard() {
@@ -228,13 +279,12 @@
       supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) {
         console.log(`[SUB][${VERSION}] Runde Event empfangen:`, payload);
         ladeFrage();
-        ladeAntworten();
       }).subscribe();
       console.log(`[SUB][${VERSION}] Runden-Channel subscribed`);
-      supabase.channel(`lobby-antworten-${aktuelleLobby.id}`).on("postgres_changes", { event:"INSERT", schema:"public", table:"player_answers", filter:`round_id=eq.${aktuelleRunde?.id || '00000000-0000-0000-0000-000000000000'}` }, function() {
-        console.log(`[SUB][${VERSION}] Neue Antwort empfangen`);
+      supabase.channel(`lobby-antworten-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"player_answers", filter:`round_id=eq.${aktuelleRunde?.id || '00000000-0000-0000-0000-000000000000'}` }, function() {
+        console.log(`[SUB][${VERSION}] Antwort Event empfangen`);
+        ladeSpieler();
         ladeAntworten();
-        ladeLeaderboard();
       }).subscribe();
       console.log(`[SUB][${VERSION}] Antworten-Channel subscribed`);
     }
@@ -271,15 +321,23 @@
       console.log(`[FRAGE][${VERSION}] Runde Ergebnis:`, runde, "Fehler:", rundeError || null);
 
       if (rundeError || !runde) {
-        console.log(`[FRAGE][${VERSION}] Keine aktive Runde gefunden, Frage-Bereich ausblenden`);
+        console.log(`[FRAGE][${VERSION}] Keine aktive Runde gefunden`);
         frageBereich.style.display = "none";
         aktuelleRunde = null;
+        nextButton.disabled = true;
+        aufloesenButton.disabled = true;
+        antwortenBereich.style.display = "none";
         return;
       }
 
       aktuelleRunde = runde;
+      console.log(`[FRAGE][${VERSION}] Aktuelle Runde gesetzt:`, runde.id);
 
-      console.log(`[FRAGE][${VERSION}] Hole Frage-Daten für question_id:`, runde.question_id);
+      // Buttons aktivieren
+      nextButton.disabled = false;
+      aufloesenButton.disabled = false;
+
+      console.log(`[FRAGE][${VERSION}] Hole Frage-Daten ...`);
       const { data: frage, error: frageError } = await supabase
         .from("questions")
         .select("display_text, quiz_type")
@@ -289,14 +347,20 @@
       console.log(`[FRAGE][${VERSION}] Frage Ergebnis:`, frage, "Fehler:", frageError || null);
 
       if (frageError || !frage) {
-        console.log(`[FRAGE][${VERSION}] Frage nicht gefunden, Frage-Bereich ausblenden`);
+        console.log(`[FRAGE][${VERSION}] Frage nicht gefunden`);
         frageBereich.style.display = "none";
         return;
       }
 
       frageBereich.style.display = "block";
       frageText.textContent = frage.display_text || "Frage wird geladen …";
-      console.log(`[FRAGE][${VERSION}] Frage-Bereich aktualisiert:`, frage.display_text);
+      console.log(`[FRAGE][${VERSION}] Frage angezeigt:`, frage.display_text);
+
+      // Spieler-Liste mit Status neu laden
+      ladeSpieler();
+
+      // Antworten ausblenden (bis "Auflösen" geklickt wird)
+      antwortenBereich.style.display = "none";
     }
 
     async function ladeAntworten() {
@@ -321,22 +385,39 @@
         return;
       }
 
-      antwortenBereich.style.display = "block";
-      antwortenListe.innerHTML = "";
+      // Nur anzeigen, wenn "Auflösen" geklickt wurde (wird über Button-Status gesteuert)
+      // Standardmäßig ausgeblendet
+    }
 
-      for (const antwort of antworten) {
-        const div = document.createElement("div");
-        div.className = "antwort " + (antwort.question_options?.is_correct ? "richtig" : "falsch");
-        div.textContent = `${antwort.players?.display_name || "Unbekannt"}: ${antwort.question_options?.option_text || "?"} ${antwort.question_options?.is_correct ? "✓" : "✗"}`;
-        antwortenListe.appendChild(div);
-      }
+    function zeigeAntworten() {
+      console.log(`[ANTWORTEN][${VERSION}] zeigeAntworten aufgerufen`);
+      if (!aktuelleRunde) return;
 
-      console.log(`[ANTWORTEN][${VERSION}] Antworten angezeigt:`, antworten.length);
+      supabase
+        .from("player_answers")
+        .select("*, players(display_name), question_options(option_text, is_correct)")
+        .eq("round_id", aktuelleRunde.id)
+        .order("answered_at", { ascending: false })
+        .then(({ data, error }) => {
+          if (error || !data) {
+            console.error(`[ANTWORTEN][${VERSION}] Fehler:`, error);
+            return;
+          }
+          console.log(`[ANTWORTEN][${VERSION}] Antworten:`, data);
+          antwortenBereich.style.display = "block";
+          antwortenListe.innerHTML = "";
+          for (const antwort of data) {
+            const div = document.createElement("div");
+            div.className = "antwort " + (antwort.question_options?.is_correct ? "richtig" : "falsch");
+            div.textContent = `${antwort.players?.display_name || "Unbekannt"}: ${antwort.question_options?.option_text || "?"} ${antwort.question_options?.is_correct ? "✓" : "✗"}`;
+            antwortenListe.appendChild(div);
+          }
+          ladeLeaderboard();
+        });
     }
 
     async function starteQuiz() {
       console.log(`[QUIZ][${VERSION}] starteQuiz aufgerufen`);
-      console.log(`[QUIZ][${VERSION}] aktuelleLobby:`, aktuelleLobby);
       if (!aktuelleLobby || aktuelleLobby.status !== "waiting") {
         console.log(`[QUIZ][${VERSION}] ABBRUCH: Lobby fehlt oder Status nicht waiting`);
         return;
@@ -345,28 +426,51 @@
       beendenButton.disabled = true;
       status.className = "status";
       status.textContent = "Quiz wird gestartet ...";
-      console.log(`[QUIZ][${VERSION}] RPC start_lobby aufrufen mit Code:`, aktuelleLobby.code);
+      console.log(`[QUIZ][${VERSION}] RPC start_lobby aufrufen`);
       try {
         const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
-        if (error) {
-          console.error(`[QUIZ][${VERSION}] Fehler von start_lobby:`, error);
-          throw error;
-        }
-        console.log(`[QUIZ][${VERSION}] start_lobby erfolgreich, neue Lobby-Daten:`, data);
+        if (error) throw error;
+        console.log(`[QUIZ][${VERSION}] start_lobby erfolgreich:`, data);
         aktuelleLobby = data;
         status.className = "status erfolg";
         status.textContent = "Das Quiz läuft.";
-        startButton.disabled = true;
-        beendenButton.disabled = false;
-
-        console.log(`[QUIZ][${VERSION}] Frage wird geladen (KEINE Weiterleitung)`);
         ladeFrage();
       } catch (error) {
-        console.error(`[QUIZ][${VERSION}] Exception in starteQuiz:`, error);
+        console.error(`[QUIZ][${VERSION}] Exception:`, error);
         status.className = "status fehler";
         status.textContent = `Start nicht möglich: ${error.message}`;
         startButton.disabled = false;
       }
+    }
+
+    async function naechsteFrage() {
+      console.log(`[NEXT][${VERSION}] naechsteFrage aufgerufen`);
+      if (!aktuelleLobby || !aktuelleRunde) {
+        console.log(`[NEXT][${VERSION}] ABBRUCH: keine Lobby oder Runde`);
+        return;
+      }
+      nextButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Nächste Frage wird geladen ...";
+      try {
+        const { data, error } = await supabase.rpc("next_question", { p_lobby_id: aktuelleLobby.id });
+        if (error) throw error;
+        console.log(`[NEXT][${VERSION}] next_question erfolgreich:`, data);
+        aktuelleRunde = data;
+        status.className = "status erfolg";
+        status.textContent = "Nächste Frage läuft.";
+        ladeFrage();
+      } catch (error) {
+        console.error(`[NEXT][${VERSION}] Exception:`, error);
+        status.className = "status fehler";
+        status.textContent = `Fehler: ${error.message}`;
+        nextButton.disabled = false;
+      }
+    }
+
+    async function aufloesen() {
+      console.log(`[AUFLOESEN][${VERSION}] aufloesen aufgerufen`);
+      zeigeAntworten();
     }
 
     async function beendeSession() {
@@ -396,11 +500,15 @@
     }
 
     startButton.addEventListener("click", starteQuiz);
-    console.log(`[INIT][${VERSION}] Event-Listener für Quiz starten registriert`);
+    console.log(`[INIT][${VERSION}] Event-Listener Quiz starten registriert`);
+    nextButton.addEventListener("click", naechsteFrage);
+    console.log(`[INIT][${VERSION}] Event-Listener Nächste Frage registriert`);
+    aufloesenButton.addEventListener("click", aufloesen);
+    console.log(`[INIT][${VERSION}] Event-Listener Auflösen registriert`);
     beendenButton.addEventListener("click", beendeSession);
-    console.log(`[INIT][${VERSION}] Event-Listener für Session beenden registriert`);
+    console.log(`[INIT][${VERSION}] Event-Listener Session beenden registriert`);
     lobbyErstellenButton.addEventListener("click", erstelleLobby);
-    console.log(`[INIT][${VERSION}] Event-Listener für Lobby erstellen registriert`);
+    console.log(`[INIT][${VERSION}] Event-Listener Lobby erstellen registriert`);
   </script>
 </body>
 </html>
