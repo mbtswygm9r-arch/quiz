@@ -27,10 +27,16 @@
     .antwort:last-child { border-bottom:none; }
     .antwort.richtig { color:var(--success); }
     .antwort.falsch { color:var(--error); }
+    .leaderboardBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
+    .leaderboardBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
+    .leaderboard { list-style:none; padding:0; }
+    .leaderboard li { padding:8px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
+    .leaderboard li:last-child { border-bottom:none; }
+    .leaderboard li:first-child { font-weight:bold; background:#f0fdf4; }
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v7</h1>
+  <h1>Quiz-Host v8</h1>
   <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
   <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
   <p id="status" class="status"></p>
@@ -57,6 +63,11 @@
       <h2>Antworten</h2>
       <div id="antwortenListe"></div>
     </section>
+
+    <section id="leaderboardBereich" class="leaderboardBox">
+      <h2>Leaderboard</h2>
+      <ol id="leaderboardListe" class="leaderboard"></ol>
+    </section>
   </section>
 
   <script type="module">
@@ -79,10 +90,12 @@
     const frageText = document.getElementById("frageText");
     const antwortenBereich = document.getElementById("antwortenBereich");
     const antwortenListe = document.getElementById("antwortenListe");
+    const leaderboardBereich = document.getElementById("leaderboardBereich");
+    const leaderboardListe = document.getElementById("leaderboardListe");
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v7";
+    const VERSION = "v8";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -152,7 +165,7 @@
 
     async function ladeSpieler() {
       console.log(`[SPIELER][${VERSION}] Lade Spieler für Lobby:`, aktuelleLobby?.id);
-      const { data, error } = await supabase.from("players").select("display_name, score, joined_at").eq("lobby_id", aktuelleLobby.id).order("joined_at", { ascending:true });
+      const { data, error } = await supabase.from("players").select("display_name, score, joined_at").eq("lobby_id", aktuelleLobby.id).order("score", { ascending:false }).order("joined_at", { ascending:true });
       if (error) {
         console.error(`[SPIELER][${VERSION}] Fehler beim Laden:`, error);
         status.className = "status fehler";
@@ -170,6 +183,39 @@
       const disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
       console.log(`[UI][${VERSION}] StartButton disabled setzen auf:`, disabled, "weil Spieler:", data.length, "Status:", aktuelleLobby.status);
       startButton.disabled = disabled;
+      ladeLeaderboard();
+    }
+
+    function ladeLeaderboard() {
+      console.log(`[LEADERBOARD][${VERSION}] ladeLeaderboard aufgerufen`);
+      if (!aktuelleLobby) {
+        console.log(`[LEADERBOARD][${VERSION}] ABBRUCH: keine Lobby`);
+        leaderboardBereich.style.display = "none";
+        return;
+      }
+
+      supabase.from("players")
+        .select("display_name, score")
+        .eq("lobby_id", aktuelleLobby.id)
+        .order("score", { ascending:false })
+        .order("joined_at", { ascending:true })
+        .then(({ data, error }) => {
+          if (error || !data) {
+            console.error(`[LEADERBOARD][${VERSION}] Fehler:`, error);
+            return;
+          }
+          console.log(`[LEADERBOARD][${VERSION}] Daten:`, data);
+          leaderboardBereich.style.display = "block";
+          leaderboardListe.innerHTML = "";
+          for (const spieler of data) {
+            const li = document.createElement("li");
+            li.textContent = spieler.display_name;
+            const span = document.createElement("span");
+            span.textContent = `${spieler.score} Pkt`;
+            li.appendChild(span);
+            leaderboardListe.appendChild(li);
+          }
+        });
     }
 
     function abonniereSpieler() {
@@ -188,6 +234,7 @@
       supabase.channel(`lobby-antworten-${aktuelleLobby.id}`).on("postgres_changes", { event:"INSERT", schema:"public", table:"player_answers", filter:`round_id=eq.${aktuelleRunde?.id || '00000000-0000-0000-0000-000000000000'}` }, function() {
         console.log(`[SUB][${VERSION}] Neue Antwort empfangen`);
         ladeAntworten();
+        ladeLeaderboard();
       }).subscribe();
       console.log(`[SUB][${VERSION}] Antworten-Channel subscribed`);
     }
@@ -312,11 +359,8 @@
         startButton.disabled = true;
         beendenButton.disabled = false;
 
-        console.log(`[QUIZ][${VERSION}] Weiterleitung auf Session-Seite`);
-        const sessionUrl = new URL("session.html", window.location.href);
-        sessionUrl.searchParams.set("lobby", aktuelleLobby.code);
-        console.log(`[REDIRECT][${VERSION}] Weiterleitung zu:`, sessionUrl.toString());
-        window.location.href = sessionUrl.toString();
+        console.log(`[QUIZ][${VERSION}] Frage wird geladen (KEINE Weiterleitung)`);
+        ladeFrage();
       } catch (error) {
         console.error(`[QUIZ][${VERSION}] Exception in starteQuiz:`, error);
         status.className = "status fehler";
