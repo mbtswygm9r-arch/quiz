@@ -5,16 +5,86 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Quiz Session</title>
   <style>
-    /* ... dein Style ... */
+    :root {
+      --text: #172033;
+      --blue: #2563eb;
+      --border: #d9dee8;
+      --success: #15803d;
+      --error: #b42318;
+    }
+
+    body {
+      max-width: 480px;
+      margin: 40px auto;
+      padding: 0 20px;
+      font-family: Arial, sans-serif;
+      color: var(--text);
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 24px;
+    }
+
+    .box {
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .frage-text {
+      font-size: 1.2rem;
+      margin: 0 0 20px 0;
+    }
+
+    .optionen {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .optionen button {
+      width: 100%;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: bold;
+      background: var(--blue);
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .optionen button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .warte-bereich p {
+      font-weight: bold;
+    }
+
+    .fehler {
+      color: var(--error);
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <div id="loading">Lade Session...</div>
-  <div id="session-bereich" style="display:none;">
-    <h2 id="frage-text">Frage</h2>
-    <div id="optionen"></div>
+  <h1>Quiz Session v5</h1>
+
+  <div id="loading" class="box">
+    Lade Session...
   </div>
-  <div id="warte-bereich" style="display:none;">
+
+  <div id="session-bereich" class="box" style="display: none;">
+    <h2 id="frage-text" class="frage-text">Frage</h2>
+    <div id="optionen" class="optionen"></div>
+  </div>
+
+  <div id="warte-bereich" class="box" style="display: none;">
     <p>✓ Antwort gespeichert!</p>
     <p>Warte auf nächste Frage …</p>
   </div>
@@ -40,20 +110,42 @@
 
     async function stelleAnonymenLoginSicher() {
       console.log(`[LOGIN][${VERSION}] Prüfe Session ...`);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.log(`[LOGIN][${VERSION}] Anonymer Login ...`);
-        await supabase.auth.signInAnonymously();
-      } else {
-        console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, session.user.id);
+
+      const { data, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error(`[LOGIN][${VERSION}] Fehler beim Session-Check:`, error);
+        loading.textContent = "Anmeldung fehlgeschlagen.";
+        throw error;
       }
+
+      if (data.session) {
+        console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, data.session.user.id);
+        return;
+      }
+
+      console.log(`[LOGIN][${VERSION}] Anonymer Login ...`);
+      const { error: loginError } = await supabase.auth.signInAnonymously();
+
+      if (loginError) {
+        console.error(`[LOGIN][${VERSION}] Fehler bei anonymer Anmeldung:`, loginError);
+        loading.textContent = "Anmeldung fehlgeschlagen.";
+        throw loginError;
+      }
+
+      console.log(`[LOGIN][${VERSION}] Anonym angemeldet`);
     }
 
     async function ladeLobbyId() {
       const urlParams = new URLSearchParams(window.location.search);
       aktuellerLobbyCode = urlParams.get("lobby");
+
       console.log(`[LOBBY][${VERSION}] Code aus URL:`, aktuellerLobbyCode);
-      if (!aktuellerLobbyCode) return;
+
+      if (!aktuellerLobbyCode) {
+        loading.textContent = "Kein Lobby-Code gefunden.";
+        return;
+      }
 
       const { data, error } = await supabase
         .from("lobbies")
@@ -63,6 +155,7 @@
 
       if (error || !data) {
         console.error(`[LOBBY][${VERSION}] Fehler:`, error);
+        loading.textContent = "Lobby konnte nicht geladen werden.";
         return;
       }
 
@@ -72,12 +165,14 @@
 
     async function ladeSession() {
       console.log(`[SESSION][${VERSION}] ladeSession aufgerufen`);
+
       if (!aktuelleLobbyId) {
         console.log(`[SESSION][${VERSION}] ABBRUCH: keine Lobby-ID`);
         return;
       }
 
       console.log(`[SESSION][${VERSION}] Hole aktive Runde ...`);
+
       const { data: runde, error: rundeError } = await supabase
         .from("rounds")
         .select("*")
@@ -97,7 +192,7 @@
       }
 
       if (aktuelleRunde?.id !== runde.id) {
-        console.log(`[SESSION][${VERSION}] Neue Runde:`, runde.id);
+        console.log(`[SESSION][${VERSION}] Neue Runde erkannt:`, runde.id);
         bereitsBeantwortet = false;
         warteBereich.style.display = "none";
       }
@@ -105,69 +200,138 @@
       aktuelleRunde = runde;
 
       if (bereitsBeantwortet) {
+        console.log(`[SESSION][${VERSION}] Bereits beantwortet, zeige Warte-Bereich`);
+        loading.style.display = "none";
         sessionBereich.style.display = "none";
         warteBereich.style.display = "block";
-        loading.style.display = "none";
         return;
       }
 
-      // Frage laden
-      const { data: frage } = await supabase
+      console.log(`[SESSION][${VERSION}] Hole Frage-Daten ...`);
+
+      const { data: frage, error: frageError } = await supabase
         .from("questions")
         .select("*")
         .eq("id", runde.question_id)
         .single();
 
+      if (frageError || !frage) {
+        console.error(`[SESSION][${VERSION}] Fehler beim Laden der Frage:`, frageError);
+        loading.textContent = "Frage konnte nicht geladen werden.";
+        return;
+      }
+
+      console.log(`[SESSION][${VERSION}] Frage geladen:`, frage.display_text);
+
       document.getElementById("frage-text").textContent = frage.display_text;
 
-      // Optionen laden
-      const { data: optionen } = await supabase
+      console.log(`[SESSION][${VERSION}] Hole Antwortoptionen ...`);
+
+      const { data: optionen, error: optionenError } = await supabase
         .from("question_options")
         .select("*")
         .eq("question_id", runde.question_id)
-        .order("sort_order");
+        .order("sort_order", { ascending: true });
+
+      if (optionenError || !optionen) {
+        console.error(`[SESSION][${VERSION}] Fehler beim Laden der Optionen:`, optionenError);
+        loading.textContent = "Antwortoptionen konnten nicht geladen werden.";
+        return;
+      }
+
+      console.log(`[SESSION][${VERSION}] Optionen geladen:`, optionen.length);
 
       const optionenDiv = document.getElementById("optionen");
       optionenDiv.innerHTML = "";
+
       optionen.forEach(opt => {
         const btn = document.createElement("button");
         btn.textContent = opt.option_text;
+
         btn.onclick = async () => {
-          await supabase.from("answers").insert({
-            round_id: runde.id,
-            option_id: opt.id
-          });
+          btn.disabled = true;
+
+          const { data: sessionData } = await supabase.auth.getSession();
+          const playerId = sessionData.session?.user?.id;
+
+          if (!playerId) {
+            alert("Nicht angemeldet. Seite bitte neu laden.");
+            btn.disabled = false;
+            return;
+          }
+
+          console.log(`[ANTWORT][${VERSION}] Speichere Antwort für Runde:`, runde.id);
+
+          const { error: antwortError } = await supabase
+            .from("player_answers")
+            .insert({
+              round_id: runde.id,
+              player_id: playerId,
+              option_id: opt.id
+            });
+
+          if (antwortError) {
+            console.error(`[ANTWORT][${VERSION}] Fehler:`, antwortError);
+            alert("Antwort konnte nicht gespeichert werden: " + antwortError.message);
+            btn.disabled = false;
+            return;
+          }
+
+          console.log(`[ANTWORT][${VERSION}] Antwort gespeichert`);
+
           bereitsBeantwortet = true;
           sessionBereich.style.display = "none";
           warteBereich.style.display = "block";
         };
+
         optionenDiv.appendChild(btn);
       });
 
-      sessionBereich.style.display = "block";
       loading.style.display = "none";
+      sessionBereich.style.display = "block";
+      warteBereich.style.display = "none";
     }
 
     async function subscriberEinrichten() {
       console.log(`[SUB][${VERSION}] Subscriber einrichten`);
-      if (!aktuelleLobbyId) return;
+
+      if (!aktuelleLobbyId) {
+        console.log(`[SUB][${VERSION}] ABBRUCH: keine Lobby-ID`);
+        return;
+      }
 
       supabase
         .channel(`rounds:${aktuelleLobbyId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "rounds" }, () => {
-          console.log(`[SUB][${VERSION}] Runde Update, lade neu`);
-          ladeSession();
-        })
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "rounds",
+            filter: `lobby_id=eq.${aktuelleLobbyId}`
+          },
+          () => {
+            console.log(`[SUB][${VERSION}] Runde-Update empfangen, lade neu`);
+            ladeSession();
+          }
+        )
         .subscribe();
+
+      console.log(`[SUB][${VERSION}] Runden-Channel subscribed`);
     }
 
     async function init() {
       console.log(`[INIT][${VERSION}] init() gestartet`);
-      await stelleAnonymenLoginSicher();
-      await ladeLobbyId();
-      await ladeSession();
-      await subscriberEinrichten();
-      console.log(`[INIT][${VERSION}] init() fertig`);
+
+      try {
+        await stelleAnonymenLoginSicher();
+        await ladeLobbyId();
+        await ladeSession();
+        await subscriberEinrichten();
+        console.log(`[INIT][${VERSION}] init() fertig`);
+      } catch (error) {
+        console.error(`[INIT][${VERSION}] Fehler in init():`, error);
+      }
     }
 
     init();
