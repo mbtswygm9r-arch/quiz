@@ -16,33 +16,28 @@
   </style>
 </head>
 <body>
-  <h1>Quiz beitreten v5</h1>
+  <h1>Quiz beitreten v5.1</h1>
   <div id="nameBox" class="box">
     <p>Gib deinen Namen ein, um dem Quiz beizutreten.</p>
     <input id="nameInput" type="text" placeholder="Dein Name" maxlength="30" />
     <button id="nameButton" type="button">Weiter</button>
     <p id="nameStatus" class="status"></p>
   </div>
-
   <div id="joinBox" class="box" style="display:none;">
     <p>Gib den Lobby-Code ein, den dir der Host gegeben hat.</p>
     <input id="codeInput" type="text" inputmode="text" autocapitalize="characters" placeholder="CODE" maxlength="5" />
     <button id="joinButton" type="button">Beitreten</button>
     <p id="joinStatus" class="status"></p>
   </div>
-
   <div id="wartenBox" class="box" style="display:none;">
     <p>Du bist der Lobby beigetreten. Warte auf den Host …</p>
     <p id="wartenStatus" style="font-weight:bold;"></p>
   </div>
-
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
     const SUPABASE_URL = "https://deqgoakcxiijhcujzems.supabase.co";
     const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
     const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-
     const nameInput = document.getElementById("nameInput");
     const nameButton = document.getElementById("nameButton");
     const nameStatus = document.getElementById("nameStatus");
@@ -53,110 +48,73 @@
     const joinBox = document.getElementById("joinBox");
     const wartenBox = document.getElementById("wartenBox");
     const wartenStatus = document.getElementById("wartenStatus");
-
-    const VERSION = "v5";
+    const VERSION = "v5.1";
     console.log(`[INIT][${VERSION}] Join-Skript geladen`);
-
     let aktuelleLobbyId = null;
     let aktuellerLobbyCode = null;
     let spielerId = null;
-
     async function stelleAnonymenLoginSicher() {
       console.log(`[LOGIN][${VERSION}] Prüfe Session ...`);
       const { data: sessionData } = await supabase.auth.getSession();
-      if (sessionData.session) {
-        console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, sessionData.session.user.id);
-        return;
-      }
-      console.log(`[LOGIN][${VERSION}] Nicht angemeldet, versuche anonyme Anmeldung ...`);
+      if (sessionData.session) { console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, sessionData.session.user.id); return; }
+      console.log(`[LOGIN][${VERSION}] Anonymer Login ...`);
       const { error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.error(`[LOGIN][${VERSION}] Fehler bei anonymer Anmeldung:`, error);
-        throw error;
-      }
+      if (error) { console.error(`[LOGIN][${VERSION}] Fehler:`, error); throw error; }
       console.log(`[LOGIN][${VERSION}] Anonym angemeldet`);
     }
-
     function nameEingeben() {
       console.log(`[NAME][${VERSION}] Name eingeben geklickt`);
       const name = nameInput.value.trim();
-      if (!name) {
-        nameStatus.textContent = "Bitte Namen eingeben.";
-        return;
-      }
-      console.log(`[NAME][${VERSION}] Name gespeichert:`, name);
+      if (!name) { nameStatus.textContent = "Bitte Namen eingeben."; return; }
       localStorage.setItem("quiz_player_name", name);
       nameBox.style.display = "none";
       joinBox.style.display = "block";
-
       const urlCode = new URLSearchParams(window.location.search).get("lobby");
-      if (urlCode) {
-        console.log(`[INIT][${VERSION}] Code aus URL:`, urlCode);
-        codeInput.value = urlCode.toUpperCase();
-      }
+      if (urlCode) { console.log(`[INIT][${VERSION}] Code aus URL:`, urlCode); codeInput.value = urlCode.toUpperCase(); }
     }
-
     async function lobbyBeitreten() {
       console.log(`[JOIN][${VERSION}] Beitreten gestartet`);
       const code = codeInput.value.toUpperCase().trim();
-      if (!code) {
-        joinStatus.textContent = "Bitte Code eingeben.";
-        return;
-      }
+      if (!code) { joinStatus.textContent = "Bitte Code eingeben."; return; }
       const name = localStorage.getItem("quiz_player_name");
-      if (!name) {
-        joinStatus.textContent = "Fehler: Kein Name gefunden.";
-        return;
-      }
+      if (!name) { joinStatus.textContent = "Fehler: Kein Name gefunden."; return; }
       joinButton.disabled = true;
-      joinStatus.className = "status";
       joinStatus.textContent = "Trete Lobby bei …";
       try {
         await stelleAnonymenLoginSicher();
         const { data, error } = await supabase.rpc("join_lobby", { p_code: code, p_display_name: name });
         if (error) throw error;
-        console.log(`[JOIN][${VERSION}] Erfolgreich beigetreten:`, data);
-        
-        // data ist ein Array mit einem Objekt {lobby_id, player_id}
         aktuelleLobbyId = data[0].lobby_id;
         spielerId = data[0].player_id;
         aktuellerLobbyCode = code;
-        
         joinBox.style.display = "none";
         wartenBox.style.display = "block";
         wartenStatus.textContent = `Lobby: ${code}`;
         abonniereLobby();
       } catch (error) {
         console.error(`[JOIN][${VERSION}] Fehler:`, error);
-        joinStatus.className = "status";
         joinStatus.textContent = `Fehler: ${error.message}`;
         joinButton.disabled = false;
       }
     }
-
     function abonniereLobby() {
-      console.log(`[SUB][${VERSION}] Subscriber einrichten für Lobby:`, aktuelleLobbyId);
-      supabase.channel(`lobby-status-${aktuelleLobbyId}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobbyId}` }, function(payload) {
-        console.log(`[SUB][${VERSION}] Lobby-Update empfangen:`, payload);
-        const neuerStatus = payload.new?.status;
-        if (neuerStatus === "running") {
-          console.log(`[SUB][${VERSION}] Quiz läuft, Weiterleitung auf session.html`);
+      console.log(`[SUB][${VERSION}] Subscriber für Lobby:`, aktuelleLobbyId);
+      supabase.channel(`lobby-status-v2-${aktuelleLobbyId}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobbyId}` }, function(payload) {
+        console.log(`[SUB][${VERSION}] Lobby-Update:`, payload);
+        if (payload.new?.status === "running") {
           wartenStatus.textContent = "Das Quiz startet …";
           setTimeout(() => {
-            const sessionUrl = new URL("session.html", window.location.href);
+            const sessionUrl = new URL("session-v2.html", window.location.href);
             sessionUrl.searchParams.set("lobby", aktuellerLobbyCode);
-            console.log(`[REDIRECT][${VERSION}] Weiterleitung zu:`, sessionUrl.toString());
+            console.log(`[REDIRECT][${VERSION}] Weiterleitung:`, sessionUrl.toString());
             window.location.href = sessionUrl.toString();
           }, 1000);
         }
       }).subscribe();
       console.log(`[SUB][${VERSION}] Lobby-Status-Channel subscribed`);
     }
-
     nameButton.addEventListener("click", nameEingeben);
-    console.log(`[INIT][${VERSION}] Event-Listener für Name registriert`);
     joinButton.addEventListener("click", lobbyBeitreten);
-    console.log(`[INIT][${VERSION}] Event-Listener für Beitreten registriert`);
   </script>
 </body>
 </html>
