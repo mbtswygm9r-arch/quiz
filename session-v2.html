@@ -83,9 +83,11 @@
         btn.onclick = async () => {
           btn.disabled = true;
           const { data: sessionData } = await supabase.auth.getSession();
-          const playerId = sessionData.session?.user?.id;
-          if (!playerId) { alert("Nicht angemeldet. Seite bitte neu laden."); btn.disabled = false; return; }
-          const { error: antwortError } = await supabase.from("player_answers").insert({ round_id: runde.id, player_id: playerId, option_id: opt.id });
+          const authUserId = sessionData.session?.user?.id;
+          if (!authUserId) { alert("Nicht angemeldet. Seite bitte neu laden."); btn.disabled = false; return; }
+          const { data: player, error: playerError } = await supabase.from("players").select("id").eq("lobby_id", aktuelleLobbyId).eq("user_id", authUserId).single();
+          if (playerError || !player) { console.error(`[ANTWORT][${VERSION}] Spieler nicht gefunden:`, playerError); alert("Spieler konnte nicht zugeordnet werden."); btn.disabled = false; return; }
+          const { error: antwortError } = await supabase.from("player_answers").insert({ round_id: runde.id, player_id: player.id, option_id: opt.id });
           if (antwortError) { console.error(`[ANTWORT][${VERSION}] Fehler:`, antwortError); alert("Antwort konnte nicht gespeichert werden: " + antwortError.message); btn.disabled = false; return; }
           bereitsBeantwortet = true;
           sessionBereich.style.display = "none";
