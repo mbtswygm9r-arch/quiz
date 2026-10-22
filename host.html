@@ -20,7 +20,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 </style>
 </head>
 <body>
-<h1>Quiz-Host v12.1</h1>
+<h1>Quiz-Host v13</h1>
 <button id="createLobby">Lobby erstellen</button>
 <p id="status" class="status"></p>
 
@@ -61,6 +61,7 @@ function setStatus(t,c=""){const s=$("status");s.textContent=t;s.className="stat
 function show(id,on=true){$(id).classList.toggle("hidden",!on)}
 async function login(){const{data:{session}}=await supabase.auth.getSession();if(!session)await supabase.auth.signInAnonymously()}
 function code(){const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<5;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
+function sendControl(action,payload={}){controlChannel?.send({type:"broadcast",event:"control",payload:{action,...payload}})}
 
 async function createLobby(){
 try{
@@ -105,10 +106,10 @@ loadPlayers();
 }
 
 function startQuestionTimer(){
-clearInterval(questionTimer);remaining=40;$("countdown").textContent=remaining;
+clearInterval(questionTimer);remaining=40;$("countdown").textContent=remaining;sendControl("time",{remaining});
 questionTimer=setInterval(async()=>{
 if(paused)return;
-remaining--;$("countdown").textContent=remaining;
+remaining--;$("countdown").textContent=remaining;sendControl("time",{remaining});
 if(remaining<=0){clearInterval(questionTimer);if(round&&!round.revealed_at&&!revealing)await reveal()}
 },1000);
 }
@@ -136,6 +137,7 @@ try{
 await supabase.rpc("vergebe_punkte",{p_round_id:round.id});
 await supabase.rpc("reveal_round",{p_round_id:round.id});
 round.revealed_at=new Date().toISOString();
+sendControl("revealed");
 const{data:options}=await supabase.from("question_options").select("*").eq("question_id",round.question_id);
 const correct=options.find(o=>o.is_correct);
 $("correctAnswer").textContent="Richtige Antwort: "+correct.option_text;

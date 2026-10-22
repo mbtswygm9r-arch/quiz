@@ -32,8 +32,6 @@ button:disabled{opacity:.5}
 <div id="result" class="box hidden">
 <p id="resultText"></p>
 <div id="solution" class="loesung"></div>
-<p id="nextIn"></p>
-<button id="pauseButtonResult">Pause</button>
 </div>
 <div id="finished" class="box hidden">
 <h2>Quiz beendet</h2>
@@ -44,7 +42,7 @@ button:disabled{opacity:.5}
 import{createClient}from"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 const supabase=createClient("https://deqgoakcxiijhcujzems.supabase.co","sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT");
 const $=id=>document.getElementById(id);
-let lobbyId=null,round=null,questionTimer=null,nextTimer=null,remaining=40,nextRemaining=5,answered=false,paused=false,controlChannel=null;
+let lobbyId=null,round=null,answered=false,paused=false,controlChannel=null;
 
 function show(id,on=true){$(id).classList.toggle("hidden",!on)}
 function hideAll(){["loading","question","waiting","result","finished"].forEach(i=>show(i,false))}
@@ -66,7 +64,7 @@ async function load(){
 if(!lobbyId)return;
 const{data:r}=await supabase.from("rounds").select("*").eq("lobby_id",lobbyId).eq("status","active").order("started_at",{ascending:false}).limit(1).maybeSingle();
 if(!r){hideAll();$("loading").textContent="Warte auf Host …";show("loading");return}
-if(round?.id!==r.id){answered=false;clearInterval(questionTimer);clearInterval(nextTimer)}
+if(round?.id!==r.id)answered=false;
 round=r;
 if(r.revealed_at)return showResult(r);
 if(answered){hideAll();show("waiting");return}
@@ -79,27 +77,16 @@ const b=document.createElement("button");b.textContent=o.option_text;
 b.onclick=async()=>{b.disabled=true;const p=await getPlayer();if(!p)return;const{error}=await supabase.from("player_answers").insert({round_id:r.id,player_id:p.id,option_id:o.id});if(!error){answered=true;hideAll();show("waiting")}else b.disabled=false};
 $("options").appendChild(b);
 });
-hideAll();show("question");startQuestionTimer();
-}
-
-function startQuestionTimer(){
-clearInterval(questionTimer);let t=40;$("countdown").textContent=t;
-questionTimer=setInterval(()=>{if(paused)return;t--;$("countdown").textContent=t;if(t<=0)clearInterval(questionTimer)},1000);
-}
-
-function startNextTimer(){
-clearInterval(nextTimer);nextRemaining=5;$("nextIn").textContent=`Nächste Frage in ${nextRemaining} Sekunden …`;
-nextTimer=setInterval(()=>{if(paused)return;nextRemaining--;$("nextIn").textContent=`Nächste Frage in ${nextRemaining} Sekunden …`;if(nextRemaining<=0)clearInterval(nextTimer)},1000);
+hideAll();show("question");
 }
 
 function togglePause(){
 paused=!paused;
-["pauseButton","pauseButtonWaiting","pauseButtonResult"].forEach(id=>{const b=$(id);if(b)b.textContent=paused?"Weiter":"Pause"});
+["pauseButton","pauseButtonWaiting"].forEach(id=>{const b=$(id);if(b)b.textContent=paused?"Weiter":"Pause"});
 controlChannel?.send({type:"broadcast",event:"control",payload:{action:paused?"pause":"resume"}});
 }
 
 async function showResult(r){
-clearInterval(questionTimer);
 const p=await getPlayer();
 const{data:options}=await supabase.from("question_options").select("*").eq("question_id",r.question_id);
 const correct=options.find(o=>o.is_correct);
@@ -110,15 +97,18 @@ $("resultText").textContent=ok?"✓ Richtig!":"✗ Leider falsch.";
 $("resultText").className=ok?"richtig":"falsch";
 $("solution").textContent="Richtige Antwort: "+correct.option_text;
 hideAll();show("result");
-if(!paused)startNextTimer();
 }
 
 async function init(){
 await login();await getLobby();await load();
 supabase.channel("rounds-"+lobbyId).on("postgres_changes",{event:"*",schema:"public",table:"rounds",filter:`lobby_id=eq.${lobbyId}`},load).subscribe();
-supabase.channel("lobby-"+lobbyId).on("postgres_changes",{event:"UPDATE",schema:"public",table:"lobbies",filter:`id=eq.${lobbyId}`},p=>{if(p.new.status==="finished"){clearInterval(questionTimer);clearInterval(nextTimer);hideAll();show("finished")}}).subscribe();
-controlChannel=supabase.channel("control-"+lobbyId).subscribe();
-["pauseButton","pauseButtonWaiting","pauseButtonResult"].forEach(id=>$(id)?.addEventListener("click",togglePause));
+supabase.channel("lobby-"+lobbyId).on("postgres_changes",{event:"UPDATE",schema:"public",table:"lobbies",filter:`id=eq.${lobbyId}`},p=>{if(p.new.status==="finished"){hideAll();show("finished")}}).subscribe();
+controlChannel=supabase.channel("control-"+lobbyId);
+controlChannel.on("broadcast",{event:"control"},({payload})=>{
+if(payload.action==="time")$("countdown").textContent=payload.remaining;
+if(payload.action==="revealed"){/* Ergebnis kommt über rounds-Update */}
+}).subscribe();
+["pauseButton","pauseButtonWaiting"].forEach(id=>$(id)?.addEventListener("click",togglePause));
 }
 init();
 </script>
