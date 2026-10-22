@@ -27,6 +27,7 @@
     .antwort:last-child { border-bottom:none; }
     .antwort.richtig { color:var(--success); }
     .antwort.falsch { color:var(--error); }
+    .richtigeAntwort { margin-top:12px; padding:12px; border-radius:8px; background:#f0fdf4; color:var(--success); font-weight:bold; }
     .spielerBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; }
     .spielerBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
     .spielerListe { list-style:none; padding:0; margin:0; }
@@ -53,9 +54,8 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v10.1</h1>
+  <h1>Quiz-Host v10.2</h1>
 
-  <!-- Vor Quiz-Start -->
   <section id="vorQuiz">
     <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
     <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
@@ -78,7 +78,6 @@
     </section>
   </section>
 
-  <!-- Nach Quiz-Start -->
   <section id="quizBereich" class="quizBereich">
     <div class="infoBox">
       <h2>Quiz läuft</h2>
@@ -102,7 +101,9 @@
     </div>
 
     <section id="antwortenBereich" class="antwortenBox">
-      <h2>Antworten</h2>
+      <h2>Auflösung</h2>
+      <div id="richtigeAntwort" class="richtigeAntwort"></div>
+      <h2 style="margin-top:16px;">Antworten</h2>
       <div id="antwortenListe"></div>
     </section>
 
@@ -138,41 +139,30 @@
     const spielerListeQuiz = document.getElementById("spielerListeQuiz");
     const antwortenBereich = document.getElementById("antwortenBereich");
     const antwortenListe = document.getElementById("antwortenListe");
+    const richtigeAntwortBox = document.getElementById("richtigeAntwort");
     const leaderboardBereich = document.getElementById("leaderboardBereich");
     const leaderboardListe = document.getElementById("leaderboardListe");
     let aktuelleLobby = null;
     let aktuelleRunde = null;
 
-    const VERSION = "v10.1";
+    const VERSION = "v10.2";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
-      console.log(`[LOGIN][${VERSION}] Prüfe Session ...`);
       const { data: sessionData } = await supabase.auth.getSession();
-      if (sessionData.session) {
-        console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, sessionData.session.user.id);
-        return;
-      }
-      console.log(`[LOGIN][${VERSION}] Nicht angemeldet, versuche anonyme Anmeldung ...`);
+      if (sessionData.session) return;
       const { error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.error(`[LOGIN][${VERSION}] Fehler bei anonymer Anmeldung:`, error);
-        throw error;
-      }
-      console.log(`[LOGIN][${VERSION}] Anonym angemeldet`);
+      if (error) throw error;
     }
 
     function erstelleLobbyCode() {
       const zeichen = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       let code = "";
-      for (let index = 0; index < 5; index += 1) {
-        code += zeichen[Math.floor(Math.random() * zeichen.length)];
-      }
+      for (let index = 0; index < 5; index += 1) code += zeichen[Math.floor(Math.random() * zeichen.length)];
       return code;
     }
 
     async function erstelleLobby() {
-      console.log(`[LOBBY][${VERSION}] Erstellen gestartet`);
       lobbyErstellenButton.disabled = true;
       status.className = "status";
       status.textContent = "Lobby wird erstellt ...";
@@ -180,22 +170,17 @@
         await stelleAnonymenLoginSicher();
         for (let versuch = 1; versuch <= 5; versuch += 1) {
           const code = erstelleLobbyCode();
-          console.log(`[LOBBY][${VERSION}] Versuch ${versuch} mit Code:`, code);
           const { data, error } = await supabase.rpc("create_lobby", { p_code: code });
           if (!error) {
-            console.log(`[LOBBY][${VERSION}] Erfolgreich erstellt:`, data);
             aktuelleLobby = data;
             zeigeLobby();
             abonniereSpieler();
             status.textContent = "Lobby ist bereit.";
-            console.log(`[LOBBY][${VERSION}] Fertig, Lobby angezeigt und Subscriber gestartet`);
             return;
           }
-          console.warn(`[LOBBY][${VERSION}] Fehler beim Erstellen:`, error);
           if (!error.message.includes("duplicate key") || versuch === 5) throw error;
         }
       } catch (error) {
-        console.error(`[LOBBY][${VERSION}] Abbruch mit Fehler:`, error);
         status.className = "status fehler";
         status.textContent = `Fehler beim Erstellen: ${error.message}`;
         lobbyErstellenButton.disabled = false;
@@ -203,7 +188,6 @@
     }
 
     function zeigeLobby() {
-      console.log(`[UI][${VERSION}] Lobby anzeigen`);
       const joinUrl = new URL("join.html", window.location.href);
       joinUrl.searchParams.set("lobby", aktuelleLobby.code);
       lobbyCodeAnzeige.textContent = aktuelleLobby.code;
@@ -212,97 +196,72 @@
     }
 
     async function ladeSpieler() {
-      console.log(`[SPIELER][${VERSION}] Lade Spieler für Lobby:`, aktuelleLobby?.id);
-      const { data, error } = await supabase.from("players").select("display_name, score, joined_at").eq("lobby_id", aktuelleLobby.id).order("score", { ascending:false }).order("joined_at", { ascending:true });
+      if (!aktuelleLobby) return;
+      const { data, error } = await supabase.from("players")
+        .select("id, display_name, score, joined_at")
+        .eq("lobby_id", aktuelleLobby.id)
+        .order("score", { ascending:false })
+        .order("joined_at", { ascending:true });
       if (error) {
-        console.error(`[SPIELER][${VERSION}] Fehler beim Laden:`, error);
         status.className = "status fehler";
         status.textContent = `Teilnehmer konnten nicht geladen werden: ${error.message}`;
         return;
       }
-      console.log(`[SPIELER][${VERSION}] Geladene Spieler:`, data);
       spielerAnzahl.textContent = data.length;
       spielerAnzahlQuiz.textContent = data.length;
-      ladeSpielerMitStatus(data);
-      const disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
-      console.log(`[UI][${VERSION}] StartButton disabled setzen auf:`, disabled);
-      startButton.disabled = disabled;
+      await ladeSpielerMitStatus(data);
+      startButton.disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
     }
 
     async function ladeSpielerMitStatus(spieler) {
-      console.log(`[SPIELER][${VERSION}] ladeSpielerMitStatus mit`, spieler.length, "Spielern");
       if (!aktuelleRunde) {
-        console.log(`[SPIELER][${VERSION}] Keine aktive Runde, zeige nur Namen`);
         spielerListe.innerHTML = "";
-        for (const s of spieler) {
-          const li = document.createElement("li");
-          li.textContent = `${s.display_name} – ${s.score} Pkt`;
-          spielerListe.appendChild(li);
-        }
         spielerListeQuiz.innerHTML = "";
         for (const s of spieler) {
           const li = document.createElement("li");
           li.textContent = `${s.display_name} – ${s.score} Pkt`;
-          spielerListeQuiz.appendChild(li);
+          spielerListe.appendChild(li);
+          spielerListeQuiz.appendChild(li.cloneNode(true));
         }
         return;
       }
 
-      const { data: antworten, error } = await supabase
-        .from("player_answers")
+      const { data: antworten } = await supabase.from("player_answers")
         .select("player_id")
         .eq("round_id", aktuelleRunde.id);
 
-      console.log(`[SPIELER][${VERSION}] Antworten:`, antworten, "Fehler:", error);
-
       const beantwortetIds = new Set(antworten?.map(a => a.player_id) || []);
-      const alleBeantwortet = beantwortetIds.size === spieler.length;
-
-      console.log(`[SPIELER][${VERSION}] Beantwortet:`, beantwortetIds.size, "von", spieler.length, "→ alleBeantwortet:", alleBeantwortet);
 
       spielerListe.innerHTML = "";
+      spielerListeQuiz.innerHTML = "";
       for (const s of spieler) {
         const li = document.createElement("li");
         li.textContent = `${s.display_name} – ${s.score} Pkt`;
         spielerListe.appendChild(li);
-      }
 
-      spielerListeQuiz.innerHTML = "";
-      for (const s of spieler) {
-        const li = document.createElement("li");
+        const liQuiz = document.createElement("li");
         const nameSpan = document.createElement("span");
         nameSpan.textContent = `${s.display_name} – ${s.score} Pkt`;
         const statusSpan = document.createElement("span");
         statusSpan.className = "spielerStatus " + (beantwortetIds.has(s.id) ? "ja" : "nein");
         statusSpan.textContent = beantwortetIds.has(s.id) ? "✓" : "⏳";
-        li.appendChild(nameSpan);
-        li.appendChild(statusSpan);
-        spielerListeQuiz.appendChild(li);
+        liQuiz.appendChild(nameSpan);
+        liQuiz.appendChild(statusSpan);
+        spielerListeQuiz.appendChild(liQuiz);
       }
 
-      aufloesenButton.disabled = !alleBeantwortet;
-      console.log(`[UI][${VERSION}] aufloesenButton.disabled:`, !alleBeantwortet);
+      aufloesenButton.disabled = Boolean(aktuelleRunde.revealed_at);
     }
 
     function ladeLeaderboard() {
-      console.log(`[LEADERBOARD][${VERSION}] ladeLeaderboard aufgerufen`);
-      if (!aktuelleLobby) {
-        console.log(`[LEADERBOARD][${VERSION}] ABBRUCH: keine Lobby`);
-        leaderboardBereich.style.display = "none";
-        return;
-      }
-
+      if (!aktuelleLobby) return;
       supabase.from("players")
         .select("display_name, score")
         .eq("lobby_id", aktuelleLobby.id)
         .order("score", { ascending:false })
         .order("joined_at", { ascending:true })
         .then(({ data, error }) => {
-          if (error || !data) {
-            console.error(`[LEADERBOARD][${VERSION}] Fehler:`, error);
-            return;
-          }
-          console.log(`[LEADERBOARD][${VERSION}] Daten:`, data);
+          if (error || !data) return;
           leaderboardBereich.style.display = "block";
           leaderboardListe.innerHTML = "";
           for (const spieler of data) {
@@ -317,142 +276,129 @@
     }
 
     function abonniereSpieler() {
-      console.log(`[SUB][${VERSION}] Subscriber einrichten für Lobby:`, aktuelleLobby?.id);
       ladeSpieler();
-      supabase.channel(`lobby-spieler-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler).subscribe();
-      console.log(`[SUB][${VERSION}] Spieler-Channel subscribed`);
-      supabase.channel(`lobby-status-${aktuelleLobby.id}`).on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, function() { console.log(`[SUB][${VERSION}] Lobby-Status Update empfangen`); ladeLobbyStatus(); }).subscribe();
-      console.log(`[SUB][${VERSION}] Lobby-Status-Channel subscribed`);
-      supabase.channel(`lobby-runden-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, function(payload) {
-        console.log(`[SUB][${VERSION}] Runde Event empfangen:`, payload);
-        ladeFrage();
-      }).subscribe();
-      console.log(`[SUB][${VERSION}] Runden-Channel subscribed`);
-      supabase.channel(`lobby-antworten-${aktuelleLobby.id}`).on("postgres_changes", { event:"*", schema:"public", table:"player_answers", filter:`round_id=eq.${aktuelleRunde?.id || '00000000-0000-0000-0000-000000000000'}` }, function() {
-        console.log(`[SUB][${VERSION}] Antwort Event empfangen`);
-        ladeSpieler();
-      }).subscribe();
-      console.log(`[SUB][${VERSION}] Antworten-Channel subscribed`);
+      supabase.channel(`lobby-spieler-${aktuelleLobby.id}`)
+        .on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler)
+        .subscribe();
+
+      supabase.channel(`lobby-status-${aktuelleLobby.id}`)
+        .on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, ladeLobbyStatus)
+        .subscribe();
+
+      supabase.channel(`lobby-runden-${aktuelleLobby.id}`)
+        .on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeFrage)
+        .subscribe();
+
+      supabase.channel(`lobby-antworten-${aktuelleLobby.id}`)
+        .on("postgres_changes", { event:"*", schema:"public", table:"player_answers" }, (payload) => {
+          if (payload.new?.round_id === aktuelleRunde?.id) ladeSpieler();
+        })
+        .subscribe();
     }
 
     async function ladeLobbyStatus() {
-      console.log(`[STATUS][${VERSION}] Lobby-Status neu laden für:`, aktuelleLobby?.id);
+      if (!aktuelleLobby) return;
       const { data, error } = await supabase.from("lobbies").select("status").eq("id", aktuelleLobby.id).single();
-      if (error || !data) {
-        console.warn(`[STATUS][${VERSION}] Fehler oder keine Daten:`, error);
-        return;
-      }
-      console.log(`[STATUS][${VERSION}] Neuer Lobby-Status:`, data.status);
+      if (error || !data) return;
       aktuelleLobby.status = data.status;
-      
       if (aktuelleLobby.status === "running") {
         vorQuiz.style.display = "none";
         quizBereich.classList.add("visible");
       }
-      
       startButton.disabled = aktuelleLobby.status !== "waiting";
     }
 
     async function ladeFrage() {
-      console.log(`[FRAGE][${VERSION}] ladeFrage aufgerufen für Lobby:`, aktuelleLobby?.id);
-      if (!aktuelleLobby) {
-        console.log(`[FRAGE][${VERSION}] ABBRUCH: keine aktuelle Lobby`);
-        return;
-      }
-
-      console.log(`[FRAGE][${VERSION}] Hole aktive Runde ...`);
-      const { data: runde, error: rundeError } = await supabase
-        .from("rounds")
+      if (!aktuelleLobby) return;
+      const { data: runde, error: rundeError } = await supabase.from("rounds")
         .select("*")
         .eq("lobby_id", aktuelleLobby.id)
         .eq("status", "active")
-        .order("started_at", { ascending: false })
+        .order("started_at", { ascending:false })
         .limit(1)
         .single();
 
-      console.log(`[FRAGE][${VERSION}] Runde Ergebnis:`, runde, "Fehler:", rundeError || null);
-
       if (rundeError || !runde) {
-        console.log(`[FRAGE][${VERSION}] Keine aktive Runde gefunden`);
         frageBereich.style.display = "none";
+        antwortenBereich.style.display = "none";
+        leaderboardBereich.style.display = "none";
         aktuelleRunde = null;
         nextButton.disabled = true;
         aufloesenButton.disabled = true;
-        antwortenBereich.style.display = "none";
-        leaderboardBereich.style.display = "none";
         return;
       }
 
       aktuelleRunde = runde;
-      console.log(`[FRAGE][${VERSION}] Aktuelle Runde gesetzt:`, runde.id);
-
       nextButton.disabled = false;
 
-      console.log(`[FRAGE][${VERSION}] Hole Frage-Daten ...`);
-      const { data: frage, error: frageError } = await supabase
-        .from("questions")
+      const { data: frage, error: frageError } = await supabase.from("questions")
         .select("display_text, quiz_type")
         .eq("id", runde.question_id)
         .single();
 
-      console.log(`[FRAGE][${VERSION}] Frage Ergebnis:`, frage, "Fehler:", frageError || null);
-
-      if (frageError || !frage) {
-        console.log(`[FRAGE][${VERSION}] Frage nicht gefunden`);
-        frageBereich.style.display = "none";
-        return;
-      }
+      if (frageError || !frage) return;
 
       frageBereich.style.display = "block";
       frageText.textContent = frage.display_text || "Frage wird geladen …";
-      console.log(`[FRAGE][${VERSION}] Frage angezeigt:`, frage.display_text);
+
+      if (runde.revealed_at) {
+        aufloesenButton.disabled = true;
+        await zeigeAntworten();
+      } else {
+        aufloesenButton.disabled = false;
+        antwortenBereich.style.display = "none";
+        leaderboardBereich.style.display = "none";
+      }
 
       ladeSpieler();
-      antwortenBereich.style.display = "none";
-      leaderboardBereich.style.display = "none";
     }
 
-    function zeigeAntworten() {
-      console.log(`[ANTWORTEN][${VERSION}] zeigeAntworten aufgerufen`);
+    async function zeigeAntworten() {
       if (!aktuelleRunde) return;
 
-      supabase
-        .from("player_answers")
+      const { data: optionen } = await supabase.from("question_options")
+        .select("option_text, is_correct")
+        .eq("question_id", aktuelleRunde.question_id);
+
+      const richtige = optionen?.find(o => o.is_correct);
+      richtigeAntwortBox.textContent = richtige ? `Richtige Antwort: ${richtige.option_text}` : "Richtige Antwort nicht gefunden.";
+
+      const { data, error } = await supabase.from("player_answers")
         .select("*, players(display_name), question_options(option_text, is_correct)")
         .eq("round_id", aktuelleRunde.id)
-        .order("answered_at", { ascending: false })
-        .then(({ data, error }) => {
-          if (error || !data) {
-            console.error(`[ANTWORTEN][${VERSION}] Fehler:`, error);
-            return;
-          }
-          console.log(`[ANTWORTEN][${VERSION}] Antworten:`, data);
-          antwortenBereich.style.display = "block";
-          antwortenListe.innerHTML = "";
-          for (const antwort of data) {
-            const div = document.createElement("div");
-            div.className = "antwort " + (antwort.question_options?.is_correct ? "richtig" : "falsch");
-            div.textContent = `${antwort.players?.display_name || "Unbekannt"}: ${antwort.question_options?.option_text || "?"} ${antwort.question_options?.is_correct ? "✓" : "✗"}`;
-            antwortenListe.appendChild(div);
-          }
-          ladeLeaderboard();
-        });
+        .order("answered_at", { ascending:true });
+
+      if (error || !data) return;
+
+      antwortenBereich.style.display = "block";
+      antwortenListe.innerHTML = "";
+
+      if (data.length === 0) {
+        const div = document.createElement("div");
+        div.className = "antwort";
+        div.textContent = "Noch keine Antworten.";
+        antwortenListe.appendChild(div);
+      }
+
+      for (const antwort of data) {
+        const div = document.createElement("div");
+        const richtig = Boolean(antwort.question_options?.is_correct);
+        div.className = "antwort " + (richtig ? "richtig" : "falsch");
+        div.textContent = `${antwort.players?.display_name || "Unbekannt"}: ${antwort.question_options?.option_text || "?"} ${richtig ? "✓ richtig" : "✗ falsch"}`;
+        antwortenListe.appendChild(div);
+      }
+
+      ladeLeaderboard();
     }
 
     async function starteQuiz() {
-      console.log(`[QUIZ][${VERSION}] starteQuiz aufgerufen`);
-      if (!aktuelleLobby || aktuelleLobby.status !== "waiting") {
-        console.log(`[QUIZ][${VERSION}] ABBRUCH: Lobby fehlt oder Status nicht waiting`);
-        return;
-      }
+      if (!aktuelleLobby || aktuelleLobby.status !== "waiting") return;
       startButton.disabled = true;
       status.className = "status";
       status.textContent = "Quiz wird gestartet ...";
-      console.log(`[QUIZ][${VERSION}] RPC start_lobby aufrufen`);
       try {
         const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
         if (error) throw error;
-        console.log(`[QUIZ][${VERSION}] start_lobby erfolgreich:`, data);
         aktuelleLobby = data;
         status.className = "status erfolg";
         status.textContent = "Das Quiz läuft.";
@@ -460,7 +406,6 @@
         quizBereich.classList.add("visible");
         ladeFrage();
       } catch (error) {
-        console.error(`[QUIZ][${VERSION}] Exception:`, error);
         status.className = "status fehler";
         status.textContent = `Start nicht möglich: ${error.message}`;
         startButton.disabled = false;
@@ -468,11 +413,7 @@
     }
 
     async function naechsteFrage() {
-      console.log(`[NEXT][${VERSION}] naechsteFrage aufgerufen`);
-      if (!aktuelleLobby || !aktuelleRunde) {
-        console.log(`[NEXT][${VERSION}] ABBRUCH: keine Lobby oder Runde`);
-        return;
-      }
+      if (!aktuelleLobby || !aktuelleRunde) return;
       nextButton.disabled = true;
       aufloesenButton.disabled = true;
       status.className = "status";
@@ -480,13 +421,11 @@
       try {
         const { data, error } = await supabase.rpc("next_question", { p_lobby_id: aktuelleLobby.id });
         if (error) throw error;
-        console.log(`[NEXT][${VERSION}] next_question erfolgreich:`, data);
         aktuelleRunde = data;
         status.className = "status erfolg";
         status.textContent = "Nächste Frage läuft.";
         ladeFrage();
       } catch (error) {
-        console.error(`[NEXT][${VERSION}] Exception:`, error);
         status.className = "status fehler";
         status.textContent = `Fehler: ${error.message}`;
         nextButton.disabled = false;
@@ -494,40 +433,42 @@
     }
 
     async function aufloesen() {
-      console.log(`[AUFLOESEN][${VERSION}] aufloesen aufgerufen`);
-      
-      if (aktuelleRunde) {
-        console.log(`[AUFLOESEN][${VERSION}] Vergebe Punkte für Runde:`, aktuelleRunde.id);
-        const { error } = await supabase.rpc("vergebe_punkte", { p_round_id: aktuelleRunde.id });
-        if (error) {
-          console.error(`[AUFLOESEN][${VERSION}] Fehler beim Punkte vergeben:`, error);
-        }
+      if (!aktuelleRunde || aktuelleRunde.revealed_at) return;
+      aufloesenButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Antworten werden aufgelöst ...";
+
+      try {
+        const { error: punkteError } = await supabase.rpc("vergebe_punkte", { p_round_id: aktuelleRunde.id });
+        if (punkteError) throw punkteError;
+
+        const { error: revealError } = await supabase.rpc("reveal_round", { p_round_id: aktuelleRunde.id });
+        if (revealError) throw revealError;
+
+        aktuelleRunde.revealed_at = new Date().toISOString();
+        status.className = "status erfolg";
+        status.textContent = "Auflösung angezeigt.";
+        await zeigeAntworten();
+        ladeSpieler();
+      } catch (error) {
+        status.className = "status fehler";
+        status.textContent = `Auflösen fehlgeschlagen: ${error.message}`;
+        aufloesenButton.disabled = false;
       }
-      
-      zeigeAntworten();
-      ladeSpieler();
     }
 
     async function beendeSession() {
-      console.log(`[ENDE][${VERSION}] beendeSession aufgerufen`);
-      if (!aktuelleLobby) {
-        console.log(`[ENDE][${VERSION}] ABBRUCH: keine Lobby`);
-        return;
-      }
+      if (!aktuelleLobby) return;
       beendenButton.disabled = true;
       status.className = "status";
       status.textContent = "Session wird beendet ...";
       try {
         const { error } = await supabase.rpc("end_lobby", { p_code: aktuelleLobby.code });
         if (error) throw error;
-        console.log(`[ENDE][${VERSION}] Session beendet`);
         status.className = "status erfolg";
         status.textContent = "Session beendet.";
-        setTimeout(() => {
-          window.location.href = "host.html";
-        }, 1000);
+        setTimeout(() => { window.location.href = "host.html"; }, 1000);
       } catch (error) {
-        console.error(`[ENDE][${VERSION}] Fehler:`, error);
         status.className = "status fehler";
         status.textContent = `Fehler: ${error.message}`;
         beendenButton.disabled = false;
@@ -535,15 +476,10 @@
     }
 
     startButton.addEventListener("click", starteQuiz);
-    console.log(`[INIT][${VERSION}] Event-Listener Quiz starten registriert`);
     nextButton.addEventListener("click", naechsteFrage);
-    console.log(`[INIT][${VERSION}] Event-Listener Nächste Frage registriert`);
     aufloesenButton.addEventListener("click", aufloesen);
-    console.log(`[INIT][${VERSION}] Event-Listener Auflösen registriert`);
     beendenButton.addEventListener("click", beendeSession);
-    console.log(`[INIT][${VERSION}] Event-Listener Session beenden registriert`);
     lobbyErstellenButton.addEventListener("click", erstelleLobby);
-    console.log(`[INIT][${VERSION}] Event-Listener Lobby erstellen registriert`);
   </script>
 </body>
 </html>

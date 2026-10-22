@@ -14,6 +14,10 @@
     .optionen button { width:100%; padding:14px; font-size:1rem; font-weight:bold; background:var(--blue); color:#fff; border:0; border-radius:8px; cursor:pointer; }
     .optionen button:disabled { opacity:.5; cursor:not-allowed; }
     .warte-bereich p { font-weight:bold; }
+    .ergebnis { font-size:1.3rem; font-weight:bold; margin:0 0 12px 0; }
+    .ergebnis.richtig { color:var(--success); }
+    .ergebnis.falsch { color:var(--error); }
+    .loesung { padding:12px; border-radius:8px; background:#f0fdf4; color:var(--success); font-weight:bold; }
     .fehler { color:var(--error); font-weight:bold; }
   </style>
 </head>
@@ -26,7 +30,11 @@
   </div>
   <div id="warte-bereich" class="box" style="display:none;">
     <p>✓ Antwort gespeichert!</p>
-    <p>Warte auf nächste Frage …</p>
+    <p>Warte auf Auflösung oder nächste Frage …</p>
+  </div>
+  <div id="ergebnis-bereich" class="box" style="display:none;">
+    <p id="ergebnis-text" class="ergebnis"></p>
+    <div id="loesung-text" class="loesung"></div>
   </div>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
@@ -34,7 +42,6 @@
     const supabaseAnonKey = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
     const VERSION = "v2";
-    console.log(`[INIT][${VERSION}] Session-Skript geladen`);
     let aktuelleLobbyId = null;
     let aktuelleRunde = null;
     let aktuellerLobbyCode = null;
@@ -42,39 +49,110 @@
     const loading = document.getElementById("loading");
     const sessionBereich = document.getElementById("session-bereich");
     const warteBereich = document.getElementById("warte-bereich");
+    const ergebnisBereich = document.getElementById("ergebnis-bereich");
+    const ergebnisText = document.getElementById("ergebnis-text");
+    const loesungText = document.getElementById("loesung-text");
+
     async function stelleAnonymenLoginSicher() {
-      console.log(`[LOGIN][${VERSION}] Prüfe Session ...`);
       const { data, error } = await supabase.auth.getSession();
-      if (error) { console.error(`[LOGIN][${VERSION}] Fehler:`, error); loading.textContent = "Anmeldung fehlgeschlagen."; throw error; }
-      if (data.session) { console.log(`[LOGIN][${VERSION}] Bereits angemeldet:`, data.session.user.id); return; }
-      console.log(`[LOGIN][${VERSION}] Anonymer Login ...`);
+      if (error) { loading.textContent = "Anmeldung fehlgeschlagen."; throw error; }
+      if (data.session) return;
       const { error: loginError } = await supabase.auth.signInAnonymously();
-      if (loginError) { console.error(`[LOGIN][${VERSION}] Fehler:`, loginError); loading.textContent = "Anmeldung fehlgeschlagen."; throw loginError; }
-      console.log(`[LOGIN][${VERSION}] Anonym angemeldet`);
+      if (loginError) { loading.textContent = "Anmeldung fehlgeschlagen."; throw loginError; }
     }
+
     async function ladeLobbyId() {
       aktuellerLobbyCode = new URLSearchParams(window.location.search).get("lobby");
-      console.log(`[LOBBY][${VERSION}] Code aus URL:`, aktuellerLobbyCode);
       if (!aktuellerLobbyCode) { loading.textContent = "Kein Lobby-Code gefunden."; return; }
       const { data, error } = await supabase.from("lobbies").select("id").eq("code", aktuellerLobbyCode).single();
-      if (error || !data) { console.error(`[LOBBY][${VERSION}] Fehler:`, error); loading.textContent = "Lobby konnte nicht geladen werden."; return; }
+      if (error || !data) { loading.textContent = "Lobby konnte nicht geladen werden."; return; }
       aktuelleLobbyId = data.id;
-      console.log(`[LOBBY][${VERSION}] Lobby-ID:`, aktuelleLobbyId);
     }
+
+    async function holeEigenenSpieler() {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const authUserId = sessionData.session?.user?.id;
+      if (!authUserId) return null;
+      const { data } = await supabase.from("players")
+        .select("id")
+        .eq("lobby_id", aktuelleLobbyId)
+        .eq("user_id", authUserId)
+        .single();
+      return data || null;
+    }
+
+    async function zeigeAufloesung(runde) {
+      const spieler = await holeEigenenSpieler();
+      const { data: optionen } = await supabase.from("question_options")
+        .select("id, option_text, is_correct")
+        .eq("question_id", runde.question_id);
+      const richtige = optionen?.find(o => o.is_correct);
+      let eigeneAntwort = null;
+      if (spieler) {
+        const { data } = await supabase.from("player_answers")
+          .select("option_id")
+          .eq("round_id", runde.id)
+          .eq("player_id", spieler.id)
+          .maybeSingle();
+        eigeneAntwort = data;
+      }
+      const richtig = Boolean(eigeneAntwort && richtige && eigeneAntwort.option_id === richtige.id);
+      ergebnisText.textContent = richtig ? "✓ Richtig!" : "✗ Leider falsch.";
+      ergebnisText.className = "ergebnis " + (richtig ? "richtig" : "falsch");
+      loesungText.textContent = richtige ? `Richtige Antwort: ${richtige.option_text}` : "Richtige Antwort nicht gefunden.";
+      loading.style.display = "none";
+      sessionBereich.style.display = "none";
+      warteBereich.style.display = "none";
+      ergebnisBereich.style.display = "block";
+    }
+
     async function ladeSession() {
-      console.log(`[SESSION][${VERSION}] ladeSession aufgerufen`);
-      if (!aktuelleLobbyId) { console.log(`[SESSION][${VERSION}] ABBRUCH: keine Lobby-ID`); return; }
-      const { data: runde, error: rundeError } = await supabase.from("rounds").select("*").eq("lobby_id", aktuelleLobbyId).eq("status", "active").order("started_at", { ascending:false }).limit(1).single();
-      console.log(`[SESSION][${VERSION}] Runde:`, runde, "Fehler:", rundeError);
-      if (rundeError || !runde) { loading.textContent = "Warte auf Host …"; sessionBereich.style.display = "none"; warteBereich.style.display = "none"; return; }
-      if (aktuelleRunde?.id !== runde.id) { console.log(`[SESSION][${VERSION}] Neue Runde:`, runde.id); bereitsBeantwortet = false; warteBereich.style.display = "none"; }
+      if (!aktuelleLobbyId) return;
+      const { data: runde, error: rundeError } = await supabase.from("rounds")
+        .select("*")
+        .eq("lobby_id", aktuelleLobbyId)
+        .eq("status", "active")
+        .order("started_at", { ascending:false })
+        .limit(1)
+        .single();
+
+      if (rundeError || !runde) {
+        loading.textContent = "Warte auf Host …";
+        sessionBereich.style.display = "none";
+        warteBereich.style.display = "none";
+        ergebnisBereich.style.display = "none";
+        return;
+      }
+
+      if (aktuelleRunde?.id !== runde.id) {
+        bereitsBeantwortet = false;
+        warteBereich.style.display = "none";
+        ergebnisBereich.style.display = "none";
+      }
       aktuelleRunde = runde;
-      if (bereitsBeantwortet) { loading.style.display = "none"; sessionBereich.style.display = "none"; warteBereich.style.display = "block"; return; }
-      const { data: frage, error: frageError } = await supabase.from("questions").select("*").eq("id", runde.question_id).single();
-      if (frageError || !frage) { console.error(`[SESSION][${VERSION}] Fehler:`, frageError); loading.textContent = "Frage konnte nicht geladen werden."; return; }
+
+      if (runde.revealed_at) {
+        await zeigeAufloesung(runde);
+        return;
+      }
+
+      if (bereitsBeantwortet) {
+        loading.style.display = "none";
+        sessionBereich.style.display = "none";
+        ergebnisBereich.style.display = "none";
+        warteBereich.style.display = "block";
+        return;
+      }
+
+      const { data: frage, error: frageError } = await supabase.from("questions")
+        .select("*").eq("id", runde.question_id).single();
+      if (frageError || !frage) { loading.textContent = "Frage konnte nicht geladen werden."; return; }
+
       document.getElementById("frage-text").textContent = frage.display_text;
-      const { data: optionen, error: optionenError } = await supabase.from("question_options").select("*").eq("question_id", runde.question_id).order("sort_order", { ascending:true });
-      if (optionenError || !optionen) { console.error(`[SESSION][${VERSION}] Fehler:`, optionenError); loading.textContent = "Antwortoptionen konnten nicht geladen werden."; return; }
+      const { data: optionen, error: optionenError } = await supabase.from("question_options")
+        .select("*").eq("question_id", runde.question_id).order("sort_order", { ascending:true });
+      if (optionenError || !optionen) { loading.textContent = "Antwortoptionen konnten nicht geladen werden."; return; }
+
       const optionenDiv = document.getElementById("optionen");
       optionenDiv.innerHTML = "";
       optionen.forEach(opt => {
@@ -82,32 +160,43 @@
         btn.textContent = opt.option_text;
         btn.onclick = async () => {
           btn.disabled = true;
-          const { data: sessionData } = await supabase.auth.getSession();
-          const authUserId = sessionData.session?.user?.id;
-          if (!authUserId) { alert("Nicht angemeldet. Seite bitte neu laden."); btn.disabled = false; return; }
-          const { data: player, error: playerError } = await supabase.from("players").select("id").eq("lobby_id", aktuelleLobbyId).eq("user_id", authUserId).single();
-          if (playerError || !player) { console.error(`[ANTWORT][${VERSION}] Spieler nicht gefunden:`, playerError); alert("Spieler konnte nicht zugeordnet werden."); btn.disabled = false; return; }
-          const { error: antwortError } = await supabase.from("player_answers").insert({ round_id: runde.id, player_id: player.id, option_id: opt.id });
-          if (antwortError) { console.error(`[ANTWORT][${VERSION}] Fehler:`, antwortError); alert("Antwort konnte nicht gespeichert werden: " + antwortError.message); btn.disabled = false; return; }
+          const spieler = await holeEigenenSpieler();
+          if (!spieler) { alert("Spieler konnte nicht zugeordnet werden."); btn.disabled = false; return; }
+          const { error: antwortError } = await supabase.from("player_answers").insert({
+            round_id: runde.id,
+            player_id: spieler.id,
+            option_id: opt.id
+          });
+          if (antwortError) { alert("Antwort konnte nicht gespeichert werden: " + antwortError.message); btn.disabled = false; return; }
           bereitsBeantwortet = true;
           sessionBereich.style.display = "none";
           warteBereich.style.display = "block";
         };
         optionenDiv.appendChild(btn);
       });
+
       loading.style.display = "none";
-      sessionBereich.style.display = "block";
       warteBereich.style.display = "none";
+      ergebnisBereich.style.display = "none";
+      sessionBereich.style.display = "block";
     }
+
     async function subscriberEinrichten() {
       if (!aktuelleLobbyId) return;
-      supabase.channel(`rounds-v2:${aktuelleLobbyId}`).on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobbyId}` }, () => { console.log(`[SUB][${VERSION}] Runde-Update empfangen`); ladeSession(); }).subscribe();
-      console.log(`[SUB][${VERSION}] Runden-Channel subscribed`);
+      supabase.channel(`rounds-v2:${aktuelleLobbyId}`)
+        .on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobbyId}` }, ladeSession)
+        .subscribe();
     }
+
     async function init() {
-      console.log(`[INIT][${VERSION}] init() gestartet`);
-      try { await stelleAnonymenLoginSicher(); await ladeLobbyId(); await ladeSession(); await subscriberEinrichten(); console.log(`[INIT][${VERSION}] init() fertig`); }
-      catch (error) { console.error(`[INIT][${VERSION}] Fehler:`, error); }
+      try {
+        await stelleAnonymenLoginSicher();
+        await ladeLobbyId();
+        await ladeSession();
+        await subscriberEinrichten();
+      } catch (error) {
+        console.error(`[INIT][${VERSION}] Fehler:`, error);
+      }
     }
     init();
   </script>
