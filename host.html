@@ -20,7 +20,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 </style>
 </head>
 <body>
-<h1>Quiz-Host v12</h1>
+<h1>Quiz-Host v12.1</h1>
 <button id="createLobby">Lobby erstellen</button>
 <p id="status" class="status"></p>
 
@@ -55,7 +55,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 import{createClient}from"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 const supabase=createClient("https://deqgoakcxiijhcujzems.supabase.co","sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT");
 const $=id=>document.getElementById(id);
-let lobby=null,round=null,questionTimer=null,nextTimer=null,remaining=40,nextIn=5,paused=false,revealing=false,controlChannel=null;
+let lobby=null,round=null,questionTimer=null,nextTimer=null,remaining=40,paused=false,revealing=false,controlChannel=null;
 
 function setStatus(t,c=""){const s=$("status");s.textContent=t;s.className="status "+c}
 function show(id,on=true){$(id).classList.toggle("hidden",!on)}
@@ -113,7 +113,6 @@ if(remaining<=0){clearInterval(questionTimer);if(round&&!round.revealed_at&&!rev
 },1000);
 }
 
-let paused=false;
 function pauseTimers(){paused=true;clearInterval(questionTimer);clearTimeout(nextTimer);$("nextIn").textContent="Pausiert"}
 function resumeTimers(){
 paused=false;
