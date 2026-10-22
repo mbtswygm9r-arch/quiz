@@ -1,204 +1,109 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quiz Session v2</title>
-  <style>
-    :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --success:#15803d; --error:#b42318; }
-    body { max-width:480px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); text-align:center; }
-    h1 { font-size:1.4rem; margin-bottom:24px; }
-    .box { padding:24px; border:1px solid var(--border); border-radius:12px; margin-bottom:20px; }
-    .frage-text { font-size:1.2rem; margin:0 0 20px 0; }
-    .optionen { display:flex; flex-direction:column; gap:12px; }
-    .optionen button { width:100%; padding:14px; font-size:1rem; font-weight:bold; background:var(--blue); color:#fff; border:0; border-radius:8px; cursor:pointer; }
-    .optionen button:disabled { opacity:.5; cursor:not-allowed; }
-    .warte-bereich p { font-weight:bold; }
-    .ergebnis { font-size:1.3rem; font-weight:bold; margin:0 0 12px 0; }
-    .ergebnis.richtig { color:var(--success); }
-    .ergebnis.falsch { color:var(--error); }
-    .loesung { padding:12px; border-radius:8px; background:#f0fdf4; color:var(--success); font-weight:bold; }
-    .fehler { color:var(--error); font-weight:bold; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quiz – Session</title>
+<style>
+body{max-width:480px;margin:40px auto;padding:0 20px;font-family:Arial,sans-serif;text-align:center;color:#172033}
+.box{margin-top:20px;padding:24px;border:1px solid #d9dee8;border-radius:12px}
+.hidden{display:none}
+button{width:100%;padding:14px;margin-top:10px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.5}
+.countdown{font-size:1.5rem;font-weight:bold;color:#b42318}
+.richtig{color:#15803d}.falsch{color:#b42318}
+.loesung{margin-top:12px;padding:12px;border-radius:8px;background:#f0fdf4;color:#15803d;font-weight:bold}
+</style>
 </head>
 <body>
-  <h1>Quiz Session v2</h1>
-  <div id="loading" class="box">Lade Session...</div>
-  <div id="session-bereich" class="box" style="display:none;">
-    <h2 id="frage-text" class="frage-text">Frage</h2>
-    <div id="optionen" class="optionen"></div>
-  </div>
-  <div id="warte-bereich" class="box" style="display:none;">
-    <p>✓ Antwort gespeichert!</p>
-    <p>Warte auf Auflösung oder nächste Frage …</p>
-  </div>
-  <div id="ergebnis-bereich" class="box" style="display:none;">
-    <p id="ergebnis-text" class="ergebnis"></p>
-    <div id="loesung-text" class="loesung"></div>
-  </div>
-  <script type="module">
-    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-    const supabaseUrl = "https://deqgoakcxiijhcujzems.supabase.co";
-    const supabaseAnonKey = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-    const VERSION = "v2";
-    let aktuelleLobbyId = null;
-    let aktuelleRunde = null;
-    let aktuellerLobbyCode = null;
-    let bereitsBeantwortet = false;
-    const loading = document.getElementById("loading");
-    const sessionBereich = document.getElementById("session-bereich");
-    const warteBereich = document.getElementById("warte-bereich");
-    const ergebnisBereich = document.getElementById("ergebnis-bereich");
-    const ergebnisText = document.getElementById("ergebnis-text");
-    const loesungText = document.getElementById("loesung-text");
+<h1>Quiz</h1>
+<div id="loading" class="box">Lade Quiz …</div>
+<div id="question" class="box hidden">
+<p id="questionText"></p>
+<p class="countdown">Zeit: <span id="countdown">40</span> s</p>
+<div id="options"></div>
+</div>
+<div id="waiting" class="box hidden">
+<p>✓ Antwort gespeichert!</p>
+<p>Warte auf Auflösung …</p>
+</div>
+<div id="result" class="box hidden">
+<p id="resultText"></p>
+<div id="solution" class="loesung"></div>
+</div>
+<div id="finished" class="box hidden">
+<h2>Quiz beendet</h2>
+<p>Der Host zeigt jetzt den Sieger.</p>
+</div>
 
-    async function stelleAnonymenLoginSicher() {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) { loading.textContent = "Anmeldung fehlgeschlagen."; throw error; }
-      if (data.session) return;
-      const { error: loginError } = await supabase.auth.signInAnonymously();
-      if (loginError) { loading.textContent = "Anmeldung fehlgeschlagen."; throw loginError; }
-    }
+<script type="module">
+import{createClient}from"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const supabase=createClient("https://deqgoakcxiijhcujzems.supabase.co","sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT");
+const $=id=>document.getElementById(id);
+let lobbyId=null,round=null,timer=null,answered=false;
 
-    async function ladeLobbyId() {
-      aktuellerLobbyCode = new URLSearchParams(window.location.search).get("lobby");
-      if (!aktuellerLobbyCode) { loading.textContent = "Kein Lobby-Code gefunden."; return; }
-      const { data, error } = await supabase.from("lobbies").select("id").eq("code", aktuellerLobbyCode).single();
-      if (error || !data) { loading.textContent = "Lobby konnte nicht geladen werden."; return; }
-      aktuelleLobbyId = data.id;
-    }
+function show(id,on=true){$(id).classList.toggle("hidden",!on)}
+function hideAll(){["loading","question","waiting","result","finished"].forEach(i=>show(i,false))}
 
-    async function holeEigenenSpieler() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const authUserId = sessionData.session?.user?.id;
-      if (!authUserId) return null;
-      const { data } = await supabase.from("players")
-        .select("id")
-        .eq("lobby_id", aktuelleLobbyId)
-        .eq("user_id", authUserId)
-        .single();
-      return data || null;
-    }
+async function login(){const{data:{session}}=await supabase.auth.getSession();if(!session)await supabase.auth.signInAnonymously()}
 
-    async function zeigeAufloesung(runde) {
-      const spieler = await holeEigenenSpieler();
-      const { data: optionen } = await supabase.from("question_options")
-        .select("id, option_text, is_correct")
-        .eq("question_id", runde.question_id);
-      const richtige = optionen?.find(o => o.is_correct);
-      let eigeneAntwort = null;
-      if (spieler) {
-        const { data } = await supabase.from("player_answers")
-          .select("option_id")
-          .eq("round_id", runde.id)
-          .eq("player_id", spieler.id)
-          .maybeSingle();
-        eigeneAntwort = data;
-      }
-      const richtig = Boolean(eigeneAntwort && richtige && eigeneAntwort.option_id === richtige.id);
-      ergebnisText.textContent = richtig ? "✓ Richtig!" : "✗ Leider falsch.";
-      ergebnisText.className = "ergebnis " + (richtig ? "richtig" : "falsch");
-      loesungText.textContent = richtige ? `Richtige Antwort: ${richtige.option_text}` : "Richtige Antwort nicht gefunden.";
-      loading.style.display = "none";
-      sessionBereich.style.display = "none";
-      warteBereich.style.display = "none";
-      ergebnisBereich.style.display = "block";
-    }
+async function getLobby(){
+const code=new URLSearchParams(location.search).get("lobby");
+const{data}=await supabase.from("lobbies").select("id").eq("code",code).single();
+lobbyId=data.id;
+}
 
-    async function ladeSession() {
-      if (!aktuelleLobbyId) return;
-      const { data: runde, error: rundeError } = await supabase.from("rounds")
-        .select("*")
-        .eq("lobby_id", aktuelleLobbyId)
-        .eq("status", "active")
-        .order("started_at", { ascending:false })
-        .limit(1)
-        .single();
+async function getPlayer(){
+const{data:{session}}=await supabase.auth.getSession();
+const{data}=await supabase.from("players").select("id").eq("lobby_id",lobbyId).eq("user_id",session.user.id).maybeSingle();
+return data;
+}
 
-      if (rundeError || !runde) {
-        loading.textContent = "Warte auf Host …";
-        sessionBereich.style.display = "none";
-        warteBereich.style.display = "none";
-        ergebnisBereich.style.display = "none";
-        return;
-      }
+async function load(){
+if(!lobbyId)return;
+const{data:r}=await supabase.from("rounds").select("*").eq("lobby_id",lobbyId).eq("status","active").order("started_at",{ascending:false}).limit(1).maybeSingle();
+if(!r){hideAll();$("loading").textContent="Warte auf Host …";show("loading");return}
+if(round?.id!==r.id){answered=false;clearInterval(timer)}
+round=r;
+if(r.revealed_at)return showResult(r);
+if(answered){hideAll();show("waiting");return}
+const{data:q}=await supabase.from("questions").select("*").eq("id",r.question_id).single();
+const{data:options}=await supabase.from("question_options").select("*").eq("question_id",r.question_id).order("sort_order");
+$("questionText").textContent=q.display_text;
+$("options").innerHTML="";
+options.forEach(o=>{
+const b=document.createElement("button");b.textContent=o.option_text;
+b.onclick=async()=>{b.disabled=true;const p=await getPlayer();if(!p)return;const{error}=await supabase.from("player_answers").insert({round_id:r.id,player_id:p.id,option_id:o.id});if(!error){answered=true;hideAll();show("waiting")}else b.disabled=false};
+$("options").appendChild(b);
+});
+hideAll();show("question");startTimer();
+}
 
-      if (aktuelleRunde?.id !== runde.id) {
-        bereitsBeantwortet = false;
-        warteBereich.style.display = "none";
-        ergebnisBereich.style.display = "none";
-      }
-      aktuelleRunde = runde;
+function startTimer(){
+clearInterval(timer);let t=40;$("countdown").textContent=t;
+timer=setInterval(()=>{t--;$("countdown").textContent=t;if(t<=0)clearInterval(timer)},1000);
+}
 
-      if (runde.revealed_at) {
-        await zeigeAufloesung(runde);
-        return;
-      }
+async function showResult(r){
+clearInterval(timer);
+const p=await getPlayer();
+const{data:options}=await supabase.from("question_options").select("*").eq("question_id",r.question_id);
+const correct=options.find(o=>o.is_correct);
+let mine=null;
+if(p){const{data}=await supabase.from("player_answers").select("option_id").eq("round_id",r.id).eq("player_id",p.id).maybeSingle();mine=data}
+const ok=mine&&correct&&mine.option_id===correct.id;
+$("resultText").textContent=ok?"✓ Richtig!":"✗ Leider falsch.";
+$("resultText").className=ok?"richtig":"falsch";
+$("solution").textContent="Richtige Antwort: "+correct.option_text;
+hideAll();show("result");
+}
 
-      if (bereitsBeantwortet) {
-        loading.style.display = "none";
-        sessionBereich.style.display = "none";
-        ergebnisBereich.style.display = "none";
-        warteBereich.style.display = "block";
-        return;
-      }
-
-      const { data: frage, error: frageError } = await supabase.from("questions")
-        .select("*").eq("id", runde.question_id).single();
-      if (frageError || !frage) { loading.textContent = "Frage konnte nicht geladen werden."; return; }
-
-      document.getElementById("frage-text").textContent = frage.display_text;
-      const { data: optionen, error: optionenError } = await supabase.from("question_options")
-        .select("*").eq("question_id", runde.question_id).order("sort_order", { ascending:true });
-      if (optionenError || !optionen) { loading.textContent = "Antwortoptionen konnten nicht geladen werden."; return; }
-
-      const optionenDiv = document.getElementById("optionen");
-      optionenDiv.innerHTML = "";
-      optionen.forEach(opt => {
-        const btn = document.createElement("button");
-        btn.textContent = opt.option_text;
-        btn.onclick = async () => {
-          btn.disabled = true;
-          const spieler = await holeEigenenSpieler();
-          if (!spieler) { alert("Spieler konnte nicht zugeordnet werden."); btn.disabled = false; return; }
-          const { error: antwortError } = await supabase.from("player_answers").insert({
-            round_id: runde.id,
-            player_id: spieler.id,
-            option_id: opt.id
-          });
-          if (antwortError) { alert("Antwort konnte nicht gespeichert werden: " + antwortError.message); btn.disabled = false; return; }
-          bereitsBeantwortet = true;
-          sessionBereich.style.display = "none";
-          warteBereich.style.display = "block";
-        };
-        optionenDiv.appendChild(btn);
-      });
-
-      loading.style.display = "none";
-      warteBereich.style.display = "none";
-      ergebnisBereich.style.display = "none";
-      sessionBereich.style.display = "block";
-    }
-
-    async function subscriberEinrichten() {
-      if (!aktuelleLobbyId) return;
-      supabase.channel(`rounds-v2:${aktuelleLobbyId}`)
-        .on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobbyId}` }, ladeSession)
-        .subscribe();
-    }
-
-    async function init() {
-      try {
-        await stelleAnonymenLoginSicher();
-        await ladeLobbyId();
-        await ladeSession();
-        await subscriberEinrichten();
-      } catch (error) {
-        console.error(`[INIT][${VERSION}] Fehler:`, error);
-      }
-    }
-    init();
-  </script>
+async function init(){
+await login();await getLobby();await load();
+supabase.channel("rounds-"+lobbyId).on("postgres_changes",{event:"*",schema:"public",table:"rounds",filter:`lobby_id=eq.${lobbyId}`},load).subscribe();
+supabase.channel("lobby-"+lobbyId).on("postgres_changes",{event:"UPDATE",schema:"public",table:"lobbies",filter:`id=eq.${lobbyId}`},p=>{if(p.new.status==="finished"){clearInterval(timer);hideAll();show("finished")}}).subscribe();
+}
+init();
+</script>
 </body>
 </html>

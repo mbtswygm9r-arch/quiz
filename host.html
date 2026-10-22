@@ -1,494 +1,162 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Deutschrapquiz – Host</title>
-  <style>
-    :root { --text:#172033; --blue:#2563eb; --border:#d9dee8; --error:#b42318; --success:#15803d; --disabled:#98a2b3; --pending:#f59e0b; }
-    body { max-width:760px; margin:40px auto; padding:0 20px; font-family:Arial,sans-serif; color:var(--text); }
-    button { padding:12px 16px; border:0; border-radius:8px; background:var(--blue); color:#fff; font:inherit; font-weight:bold; cursor:pointer; }
-    button:disabled { opacity:.55; cursor:not-allowed; }
-    .lobby { display:none; margin-top:24px; padding:24px; border:1px solid var(--border); border-radius:12px; }
-    .code { font-size:2.5rem; font-weight:bold; letter-spacing:.2em; }
-    .link { overflow-wrap:anywhere; color:#1d4ed8; }
-    .status { min-height:24px; margin-top:16px; font-weight:bold; }
-    .fehler { color:var(--error); } .erfolg { color:var(--success); }
-    li { margin:8px 0; }
-    .aktionen { margin-top:24px; display:flex; gap:10px; flex-wrap:wrap; }
-    .startButton { background:var(--success); }
-    .startButton:disabled { background:var(--disabled); }
-    .frageBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
-    .frageBox h2 { margin:0 0 8px 0; font-size:1.2rem; }
-    .frageBox p { margin:0; }
-    .antwortenBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
-    .antwortenBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
-    .antwort { padding:8px; border-bottom:1px solid var(--border); }
-    .antwort:last-child { border-bottom:none; }
-    .antwort.richtig { color:var(--success); }
-    .antwort.falsch { color:var(--error); }
-    .richtigeAntwort { margin-top:12px; padding:12px; border-radius:8px; background:#f0fdf4; color:var(--success); font-weight:bold; }
-    .spielerBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; }
-    .spielerBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
-    .spielerListe { list-style:none; padding:0; margin:0; }
-    .spielerListe li { padding:8px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
-    .spielerListe li:last-child { border-bottom:none; }
-    .spielerStatus { font-weight:bold; }
-    .spielerStatus.ja { color:var(--success); }
-    .spielerStatus.nein { color:var(--pending); }
-    .leaderboardBox { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:12px; display:none; }
-    .leaderboardBox h2 { margin:0 0 12px 0; font-size:1.2rem; }
-    .leaderboard { list-style:none; padding:0; }
-    .leaderboard li { padding:8px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
-    .leaderboard li:last-child { border-bottom:none; }
-    .leaderboard li:first-child { font-weight:bold; background:#f0fdf4; }
-    .nextButton { background:#7c3aed; }
-    .nextButton:disabled { background:var(--disabled); }
-    .aufloesenButton { background:var(--pending); color:#000; }
-    .aufloesenButton:disabled { background:var(--disabled); }
-    .quizBereich { display:none; }
-    .quizBereich.visible { display:block; }
-    .infoBox { background:#f0f4ff; padding:16px; border-radius:8px; margin-bottom:24px; }
-    .infoBox h2 { margin:0 0 8px 0; font-size:1.1rem; }
-    .infoBox p { margin:0; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quiz – Host</title>
+<style>
+body{max-width:760px;margin:40px auto;padding:0 20px;font-family:Arial,sans-serif;color:#172033}
+button{padding:12px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.box{margin-top:20px;padding:16px;border:1px solid #d9dee8;border-radius:12px}
+.hidden{display:none}
+.status{font-weight:bold;min-height:24px}
+.error{color:#b42318}.success{color:#15803d}
+.countdown{font-size:2rem;font-weight:bold;color:#b42318}
+.antwort{padding:8px;border-bottom:1px solid #d9dee8}
+.antwort:last-child{border-bottom:0}
+.richtig{color:#15803d}.falsch{color:#b42318}
+.richtigeAntwort{margin-top:12px;padding:12px;border-radius:8px;background:#f0fdf4;color:#15803d;font-weight:bold}
+</style>
 </head>
 <body>
-  <h1>Quiz-Host v10.3</h1>
+<h1>Quiz-Host v11</h1>
+<button id="createLobby">Lobby erstellen</button>
+<p id="status" class="status"></p>
 
-  <section id="vorQuiz">
-    <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
-    <button id="lobbyErstellenButton" type="button">Lobby erstellen</button>
-    <p id="status" class="status"></p>
+<section id="lobby" class="box hidden">
+<h2>Lobby <span id="lobbyCode"></span></h2>
+<p id="joinLink"></p>
+<ul id="players"></ul>
+<button id="startQuiz" disabled>Quiz starten</button>
+</section>
 
-    <section id="lobbyBereich" class="lobby">
-      <p>Lobbycode</p>
-      <div id="lobbyCode" class="code"></div>
-      <h2>Teilnehmer-Link</h2>
-      <p id="joinLink" class="link"></p>
+<section id="quiz" class="box hidden">
+<h2>Frage <span id="questionNumber"></span>/3</h2>
+<p id="questionText"></p>
+<p class="countdown">Zeit: <span id="countdown">40</span> s</p>
+<ul id="playerStatus"></ul>
+<div id="reveal" class="hidden">
+<div id="correctAnswer" class="richtigeAntwort"></div>
+<div id="answers"></div>
+</div>
+<button id="revealButton">Auflösen</button>
+<button id="nextButton">Nächste Frage</button>
+</section>
 
-      <section id="spielerBox" class="spielerBox">
-        <h2>Teilnehmer (<span id="spielerAnzahl">0</span>/8)</h2>
-        <ul id="spielerListe" class="spielerListe"></ul>
-      </section>
+<section id="end" class="box hidden">
+<h2>Quiz beendet</h2>
+<p id="winner"></p>
+<ol id="finalScores"></ol>
+</section>
 
-      <div class="aktionen">
-        <button id="startButton" class="startButton" type="button" disabled>Quiz starten</button>
-      </div>
-    </section>
-  </section>
+<script type="module">
+import{createClient}from"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const supabase=createClient("https://deqgoakcxiijhcujzems.supabase.co","sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT");
+const $=id=>document.getElementById(id);
+let lobby=null,round=null,timer=null,timeLeft=40,revealing=false;
 
-  <section id="quizBereich" class="quizBereich">
-    <div class="infoBox">
-      <h2>Quiz läuft</h2>
-      <p>Warte auf Antworten der Teilnehmer …</p>
-    </div>
+function setStatus(text,cls=""){const s=$("status");s.textContent=text;s.className="status "+cls}
+function show(id,on=true){$(id).classList.toggle("hidden",!on)}
 
-    <section id="frageBereich" class="frageBox">
-      <h2>Aktuelle Frage</h2>
-      <p id="frageText"></p>
-    </section>
+async function login(){const{data:{session}}=await supabase.auth.getSession();if(!session)await supabase.auth.signInAnonymously()}
 
-    <section id="spielerBoxQuiz" class="spielerBox">
-      <h2>Teilnehmer (<span id="spielerAnzahlQuiz">0</span>)</h2>
-      <ul id="spielerListeQuiz" class="spielerListe"></ul>
-    </section>
+function code(){const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<5;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
 
-    <div class="aktionen">
-      <button id="aufloesenButton" class="aufloesenButton" type="button" disabled>Auflösen</button>
-      <button id="nextButton" class="nextButton" type="button" disabled>Nächste Frage</button>
-      <button id="beendenButton" type="button">Session beenden</button>
-    </div>
+async function createLobby(){
+try{
+const{data:{session}}=await supabase.auth.getSession();if(!session)await supabase.auth.signInAnonymously();
+for(let i=0;i<5;i++){
+const{data,error}=await supabase.rpc("create_lobby",{p_code:code()});
+if(!error){lobby=data;$("lobbyCode").textContent=lobby.code;const u=new URL("join.html",location.href);u.searchParams.set("lobby",lobby.code);$("joinLink").textContent=u;show("lobby");subscribe();setStatus("Lobby bereit","success");return}
+if(!String(error.message).includes("duplicate"))throw error;
+}
+}catch(e){setStatus("Fehler: "+e.message,"error")}
+}
 
-    <section id="antwortenBereich" class="antwortenBox">
-      <h2>Auflösung</h2>
-      <div id="richtigeAntwort" class="richtigeAntwort"></div>
-      <h2 style="margin-top:16px;">Antworten</h2>
-      <div id="antwortenListe"></div>
-    </section>
+async function loadPlayers(){
+if(!lobby)return;
+const{data:players}=await supabase.from("players").select("*").eq("lobby_id",lobby.id).order("score",{ascending:false}).order("joined_at");
+$("players").innerHTML=players.map(p=>`<li>${p.display_name} – ${p.score} Pkt</li>`).join("");
+$("startQuiz").disabled=!players.length||lobby.status!=="waiting";
+if(!round){$("playerStatus").innerHTML=players.map(p=>`<li>${p.display_name} – ${p.score} Pkt</li>`).join("");return}
+const{data:answers}=await supabase.from("player_answers").select("player_id").eq("round_id",round.id);
+const answered=new Set(answers?.map(a=>a.player_id));
+$("playerStatus").innerHTML=players.map(p=>`<li>${p.display_name} – ${p.score} Pkt ${answered.has(p.id)?"✓":"⏳"}</li>`).join("");
+$("revealButton").disabled=Boolean(round.revealed_at);
+if(players.length&&answered.size===players.length&&!round.revealed_at&&!revealing)await reveal();
+}
 
-    <section id="leaderboardBereich" class="leaderboardBox">
-      <h2>Leaderboard</h2>
-      <ol id="leaderboardListe" class="leaderboard"></ol>
-    </section>
-  </section>
+async function loadQuestion(){
+if(!lobby)return;
+const{data:r}=await supabase.from("rounds").select("*").eq("lobby_id",lobby.id).eq("status","active").order("started_at",{ascending:false}).limit(1).maybeSingle();
+if(!r){show("quiz",false);return}
+round=r;revealing=false;
+const{data:q}=await supabase.from("questions").select("*").eq("id",r.question_id).single();
+const{data:all}=await supabase.from("rounds").select("id").eq("lobby_id",lobby.id);
+$("questionNumber").textContent=all.length;
+$("questionText").textContent=q.display_text;
+$("reveal").classList.add("hidden");
+$("nextButton").disabled=false;
+$("revealButton").disabled=false;
+show("quiz");
+startTimer();
+loadPlayers();
+}
 
-  <script type="module">
-    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+function startTimer(){
+clearInterval(timer);timeLeft=40;$("countdown").textContent=timeLeft;
+timer=setInterval(async()=>{
+timeLeft--;$("countdown").textContent=timeLeft;
+if(timeLeft<=0){clearInterval(timer);if(round&&!round.revealed_at&&!revealing)await reveal()}
+},1000);
+}
 
-    const SUPABASE_URL = "https://deqgoakcxiijhcujzems.supabase.co";
-    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT";
-    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+async function reveal(){
+if(!round||round.revealed_at||revealing)return;
+revealing=true;clearInterval(timer);$("revealButton").disabled=true;
+try{
+await supabase.rpc("vergebe_punkte",{p_round_id:round.id});
+await supabase.rpc("reveal_round",{p_round_id:round.id});
+round.revealed_at=new Date().toISOString();
+const{data:options}=await supabase.from("question_options").select("*").eq("question_id",round.question_id);
+const correct=options.find(o=>o.is_correct);
+$("correctAnswer").textContent="Richtige Antwort: "+correct.option_text;
+const{data:answers}=await supabase.from("player_answers").select("*,players(display_name),question_options(option_text,is_correct)").eq("round_id",round.id);
+$("answers").innerHTML=answers.map(a=>`<div class="antwort ${a.question_options.is_correct?"richtig":"falsch"}">${a.players.display_name}: ${a.question_options.option_text} ${a.question_options.is_correct?"✓":"✗"}</div>`).join("")||"<div class='antwort'>Keine Antworten.</div>";
+show("reveal");
+loadPlayers();
+}catch(e){setStatus("Fehler: "+e.message,"error");$("revealButton").disabled=false}
+revealing=false;
+}
 
-    const lobbyErstellenButton = document.getElementById("lobbyErstellenButton");
-    const startButton = document.getElementById("startButton");
-    const nextButton = document.getElementById("nextButton");
-    const aufloesenButton = document.getElementById("aufloesenButton");
-    const beendenButton = document.getElementById("beendenButton");
-    const status = document.getElementById("status");
-    const vorQuiz = document.getElementById("vorQuiz");
-    const lobbyBereich = document.getElementById("lobbyBereich");
-    const lobbyCodeAnzeige = document.getElementById("lobbyCode");
-    const joinLinkAnzeige = document.getElementById("joinLink");
-    const spielerAnzahl = document.getElementById("spielerAnzahl");
-    const spielerListe = document.getElementById("spielerListe");
-    const quizBereich = document.getElementById("quizBereich");
-    const frageBereich = document.getElementById("frageBereich");
-    const frageText = document.getElementById("frageText");
-    const spielerAnzahlQuiz = document.getElementById("spielerAnzahlQuiz");
-    const spielerListeQuiz = document.getElementById("spielerListeQuiz");
-    const antwortenBereich = document.getElementById("antwortenBereich");
-    const antwortenListe = document.getElementById("antwortenListe");
-    const richtigeAntwortBox = document.getElementById("richtigeAntwort");
-    const leaderboardBereich = document.getElementById("leaderboardBereich");
-    const leaderboardListe = document.getElementById("leaderboardListe");
-    let aktuelleLobby = null;
-    let aktuelleRunde = null;
-    let autoAufloesungLaeuft = false;
+async function nextQuestion(){
+if(!lobby)return;
+clearInterval(timer);
+const{data,error}=await supabase.rpc("next_question",{p_lobby_id:lobby.id});
+if(error)return setStatus("Fehler: "+error.message,"error");
+if(!data)return showEnd();
+round=data;loadQuestion();
+}
 
-    const VERSION = "v10.3";
-    console.log(`[INIT][${VERSION}] Skript geladen`);
+async function showEnd(){
+clearInterval(timer);show("quiz",false);show("end");
+const{data:players}=await supabase.from("players").select("*").eq("lobby_id",lobby.id).order("score",{ascending:false});
+$("winner").textContent=players.length?`Sieger: ${players[0].display_name} mit ${players[0].score} Punkten`:"Kein Sieger.";
+$("finalScores").innerHTML=players.map((p,i)=>`<li>${i+1}. ${p.display_name} – ${p.score} Pkt</li>`).join("");
+}
 
-    async function stelleAnonymenLoginSicher() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (sessionData.session) return;
-      const { error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
-    }
+function subscribe(){
+supabase.channel("lobby-"+lobby.id).on("postgres_changes",{event:"*",schema:"public",table:"players",filter:`lobby_id=eq.${lobby.id}`},loadPlayers).subscribe();
+supabase.channel("rounds-"+lobby.id).on("postgres_changes",{event:"*",schema:"public",table:"rounds",filter:`lobby_id=eq.${lobby.id}`},loadQuestion).subscribe();
+supabase.channel("answers-"+lobby.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"player_answers"},p=>{if(p.new.round_id===round?.id)loadPlayers()}).subscribe();
+supabase.channel("lobby-status-"+lobby.id).on("postgres_changes",{event:"UPDATE",schema:"public",table:"lobbies",filter:`id=eq.${lobby.id}`},p=>{if(p.new.status==="finished")showEnd()}).subscribe();
+}
 
-    function erstelleLobbyCode() {
-      const zeichen = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-      let code = "";
-      for (let index = 0; index < 5; index += 1) code += zeichen[Math.floor(Math.random() * zeichen.length)];
-      return code;
-    }
-
-    async function erstelleLobby() {
-      lobbyErstellenButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Lobby wird erstellt ...";
-      try {
-        await stelleAnonymenLoginSicher();
-        for (let versuch = 1; versuch <= 5; versuch += 1) {
-          const code = erstelleLobbyCode();
-          const { data, error } = await supabase.rpc("create_lobby", { p_code: code });
-          if (!error) {
-            aktuelleLobby = data;
-            zeigeLobby();
-            abonniereSpieler();
-            status.textContent = "Lobby ist bereit.";
-            return;
-          }
-          if (!error.message.includes("duplicate key") || versuch === 5) throw error;
-        }
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Fehler beim Erstellen: ${error.message}`;
-        lobbyErstellenButton.disabled = false;
-      }
-    }
-
-    function zeigeLobby() {
-      const joinUrl = new URL("join.html", window.location.href);
-      joinUrl.searchParams.set("lobby", aktuelleLobby.code);
-      lobbyCodeAnzeige.textContent = aktuelleLobby.code;
-      joinLinkAnzeige.textContent = joinUrl.toString();
-      lobbyBereich.style.display = "block";
-    }
-
-    async function ladeSpieler() {
-      if (!aktuelleLobby) return;
-      const { data, error } = await supabase.from("players")
-        .select("id, display_name, score, joined_at")
-        .eq("lobby_id", aktuelleLobby.id)
-        .order("score", { ascending:false })
-        .order("joined_at", { ascending:true });
-      if (error) {
-        status.className = "status fehler";
-        status.textContent = `Teilnehmer konnten nicht geladen werden: ${error.message}`;
-        return;
-      }
-      spielerAnzahl.textContent = data.length;
-      spielerAnzahlQuiz.textContent = data.length;
-      await ladeSpielerMitStatus(data);
-      startButton.disabled = data.length === 0 || aktuelleLobby.status !== "waiting";
-    }
-
-    async function ladeSpielerMitStatus(spieler) {
-      if (!aktuelleRunde) {
-        spielerListe.innerHTML = "";
-        spielerListeQuiz.innerHTML = "";
-        for (const s of spieler) {
-          const li = document.createElement("li");
-          li.textContent = `${s.display_name} – ${s.score} Pkt`;
-          spielerListe.appendChild(li);
-          spielerListeQuiz.appendChild(li.cloneNode(true));
-        }
-        return;
-      }
-
-      const { data: antworten } = await supabase.from("player_answers")
-        .select("player_id")
-        .eq("round_id", aktuelleRunde.id);
-
-      const beantwortetIds = new Set(antworten?.map(a => a.player_id) || []);
-      const alleBeantwortet = spieler.length > 0 && beantwortetIds.size === spieler.length;
-
-      spielerListe.innerHTML = "";
-      spielerListeQuiz.innerHTML = "";
-      for (const s of spieler) {
-        const li = document.createElement("li");
-        li.textContent = `${s.display_name} – ${s.score} Pkt`;
-        spielerListe.appendChild(li);
-
-        const liQuiz = document.createElement("li");
-        const nameSpan = document.createElement("span");
-        nameSpan.textContent = `${s.display_name} – ${s.score} Pkt`;
-        const statusSpan = document.createElement("span");
-        statusSpan.className = "spielerStatus " + (beantwortetIds.has(s.id) ? "ja" : "nein");
-        statusSpan.textContent = beantwortetIds.has(s.id) ? "✓" : "⏳";
-        liQuiz.appendChild(nameSpan);
-        liQuiz.appendChild(statusSpan);
-        spielerListeQuiz.appendChild(liQuiz);
-      }
-
-      aufloesenButton.disabled = Boolean(aktuelleRunde.revealed_at);
-
-      if (alleBeantwortet && !aktuelleRunde.revealed_at && !autoAufloesungLaeuft) {
-        autoAufloesungLaeuft = true;
-        await aufloesen();
-        autoAufloesungLaeuft = false;
-      }
-    }
-
-    function ladeLeaderboard() {
-      if (!aktuelleLobby) return;
-      supabase.from("players")
-        .select("display_name, score")
-        .eq("lobby_id", aktuelleLobby.id)
-        .order("score", { ascending:false })
-        .order("joined_at", { ascending:true })
-        .then(({ data, error }) => {
-          if (error || !data) return;
-          leaderboardBereich.style.display = "block";
-          leaderboardListe.innerHTML = "";
-          for (const spieler of data) {
-            const li = document.createElement("li");
-            li.textContent = spieler.display_name;
-            const span = document.createElement("span");
-            span.textContent = `${spieler.score} Pkt`;
-            li.appendChild(span);
-            leaderboardListe.appendChild(li);
-          }
-        });
-    }
-
-    function abonniereSpieler() {
-      ladeSpieler();
-      supabase.channel(`lobby-spieler-${aktuelleLobby.id}`)
-        .on("postgres_changes", { event:"*", schema:"public", table:"players", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeSpieler)
-        .subscribe();
-
-      supabase.channel(`lobby-status-${aktuelleLobby.id}`)
-        .on("postgres_changes", { event:"UPDATE", schema:"public", table:"lobbies", filter:`id=eq.${aktuelleLobby.id}` }, ladeLobbyStatus)
-        .subscribe();
-
-      supabase.channel(`lobby-runden-${aktuelleLobby.id}`)
-        .on("postgres_changes", { event:"*", schema:"public", table:"rounds", filter:`lobby_id=eq.${aktuelleLobby.id}` }, ladeFrage)
-        .subscribe();
-
-      supabase.channel(`lobby-antworten-${aktuelleLobby.id}`)
-        .on("postgres_changes", { event:"*", schema:"public", table:"player_answers" }, (payload) => {
-          if (payload.new?.round_id === aktuelleRunde?.id) ladeSpieler();
-        })
-        .subscribe();
-    }
-
-    async function ladeLobbyStatus() {
-      if (!aktuelleLobby) return;
-      const { data, error } = await supabase.from("lobbies").select("status").eq("id", aktuelleLobby.id).single();
-      if (error || !data) return;
-      aktuelleLobby.status = data.status;
-      if (aktuelleLobby.status === "running") {
-        vorQuiz.style.display = "none";
-        quizBereich.classList.add("visible");
-      }
-      startButton.disabled = aktuelleLobby.status !== "waiting";
-    }
-
-    async function ladeFrage() {
-      if (!aktuelleLobby) return;
-      const { data: runde, error: rundeError } = await supabase.from("rounds")
-        .select("*")
-        .eq("lobby_id", aktuelleLobby.id)
-        .eq("status", "active")
-        .order("started_at", { ascending:false })
-        .limit(1)
-        .single();
-
-      if (rundeError || !runde) {
-        frageBereich.style.display = "none";
-        antwortenBereich.style.display = "none";
-        leaderboardBereich.style.display = "none";
-        aktuelleRunde = null;
-        nextButton.disabled = true;
-        aufloesenButton.disabled = true;
-        return;
-      }
-
-      aktuelleRunde = runde;
-      autoAufloesungLaeuft = false;
-      nextButton.disabled = false;
-
-      const { data: frage, error: frageError } = await supabase.from("questions")
-        .select("display_text, quiz_type")
-        .eq("id", runde.question_id)
-        .single();
-
-      if (frageError || !frage) return;
-
-      frageBereich.style.display = "block";
-      frageText.textContent = frage.display_text || "Frage wird geladen …";
-
-      if (runde.revealed_at) {
-        aufloesenButton.disabled = true;
-        await zeigeAntworten();
-      } else {
-        aufloesenButton.disabled = false;
-        antwortenBereich.style.display = "none";
-        leaderboardBereich.style.display = "none";
-      }
-
-      ladeSpieler();
-    }
-
-    async function zeigeAntworten() {
-      if (!aktuelleRunde) return;
-
-      const { data: optionen } = await supabase.from("question_options")
-        .select("option_text, is_correct")
-        .eq("question_id", aktuelleRunde.question_id);
-
-      const richtige = optionen?.find(o => o.is_correct);
-      richtigeAntwortBox.textContent = richtige ? `Richtige Antwort: ${richtige.option_text}` : "Richtige Antwort nicht gefunden.";
-
-      const { data, error } = await supabase.from("player_answers")
-        .select("*, players(display_name), question_options(option_text, is_correct)")
-        .eq("round_id", aktuelleRunde.id)
-        .order("answered_at", { ascending:true });
-
-      if (error || !data) return;
-
-      antwortenBereich.style.display = "block";
-      antwortenListe.innerHTML = "";
-
-      if (data.length === 0) {
-        const div = document.createElement("div");
-        div.className = "antwort";
-        div.textContent = "Noch keine Antworten.";
-        antwortenListe.appendChild(div);
-      }
-
-      for (const antwort of data) {
-        const div = document.createElement("div");
-        const richtig = Boolean(antwort.question_options?.is_correct);
-        div.className = "antwort " + (richtig ? "richtig" : "falsch");
-        div.textContent = `${antwort.players?.display_name || "Unbekannt"}: ${antwort.question_options?.option_text || "?"} ${richtig ? "✓ richtig" : "✗ falsch"}`;
-        antwortenListe.appendChild(div);
-      }
-
-      ladeLeaderboard();
-    }
-
-    async function starteQuiz() {
-      if (!aktuelleLobby || aktuelleLobby.status !== "waiting") return;
-      startButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Quiz wird gestartet ...";
-      try {
-        const { data, error } = await supabase.rpc("start_lobby", { p_code: aktuelleLobby.code });
-        if (error) throw error;
-        aktuelleLobby = data;
-        status.className = "status erfolg";
-        status.textContent = "Das Quiz läuft.";
-        vorQuiz.style.display = "none";
-        quizBereich.classList.add("visible");
-        ladeFrage();
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Start nicht möglich: ${error.message}`;
-        startButton.disabled = false;
-      }
-    }
-
-    async function naechsteFrage() {
-      if (!aktuelleLobby || !aktuelleRunde) return;
-      nextButton.disabled = true;
-      aufloesenButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Nächste Frage wird geladen ...";
-      try {
-        const { data, error } = await supabase.rpc("next_question", { p_lobby_id: aktuelleLobby.id });
-        if (error) throw error;
-        aktuelleRunde = data;
-        status.className = "status erfolg";
-        status.textContent = "Nächste Frage läuft.";
-        ladeFrage();
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Fehler: ${error.message}`;
-        nextButton.disabled = false;
-      }
-    }
-
-    async function aufloesen() {
-      if (!aktuelleRunde || aktuelleRunde.revealed_at) return;
-      aufloesenButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Antworten werden aufgelöst ...";
-
-      try {
-        const { error: punkteError } = await supabase.rpc("vergebe_punkte", { p_round_id: aktuelleRunde.id });
-        if (punkteError) throw punkteError;
-
-        const { error: revealError } = await supabase.rpc("reveal_round", { p_round_id: aktuelleRunde.id });
-        if (revealError) throw revealError;
-
-        aktuelleRunde.revealed_at = new Date().toISOString();
-        status.className = "status erfolg";
-        status.textContent = "Auflösung angezeigt.";
-        await zeigeAntworten();
-        ladeSpieler();
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Auflösen fehlgeschlagen: ${error.message}`;
-        aufloesenButton.disabled = false;
-      }
-    }
-
-    async function beendeSession() {
-      if (!aktuelleLobby) return;
-      beendenButton.disabled = true;
-      status.className = "status";
-      status.textContent = "Session wird beendet ...";
-      try {
-        const { error } = await supabase.rpc("end_lobby", { p_code: aktuelleLobby.code });
-        if (error) throw error;
-        status.className = "status erfolg";
-        status.textContent = "Session beendet.";
-        setTimeout(() => { window.location.href = "host.html"; }, 1000);
-      } catch (error) {
-        status.className = "status fehler";
-        status.textContent = `Fehler: ${error.message}`;
-        beendenButton.disabled = false;
-      }
-    }
-
-    startButton.addEventListener("click", starteQuiz);
-    nextButton.addEventListener("click", naechsteFrage);
-    aufloesenButton.addEventListener("click", aufloesen);
-    beendenButton.addEventListener("click", beendeSession);
-    lobbyErstellenButton.addEventListener("click", erstelleLobby);
-  </script>
+$("createLobby").onclick=createLobby;
+$("startQuiz").onclick=async()=>{const{data,error}=await supabase.rpc("start_lobby",{p_code:lobby.code});if(!error){lobby=data;show("lobby",false);show("quiz");loadQuestion()}};
+$("revealButton").onclick=reveal;
+$("nextButton").onclick=nextQuestion;
+</script>
 </body>
 </html>
