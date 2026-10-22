@@ -54,7 +54,7 @@
   </style>
 </head>
 <body>
-  <h1>Quiz-Host v10.2</h1>
+  <h1>Quiz-Host v10.3</h1>
 
   <section id="vorQuiz">
     <p>Erstelle eine Lobby. Teilnehmer treten anschließend über den Link bei.</p>
@@ -144,8 +144,9 @@
     const leaderboardListe = document.getElementById("leaderboardListe");
     let aktuelleLobby = null;
     let aktuelleRunde = null;
+    let autoAufloesungLaeuft = false;
 
-    const VERSION = "v10.2";
+    const VERSION = "v10.3";
     console.log(`[INIT][${VERSION}] Skript geladen`);
 
     async function stelleAnonymenLoginSicher() {
@@ -231,6 +232,7 @@
         .eq("round_id", aktuelleRunde.id);
 
       const beantwortetIds = new Set(antworten?.map(a => a.player_id) || []);
+      const alleBeantwortet = spieler.length > 0 && beantwortetIds.size === spieler.length;
 
       spielerListe.innerHTML = "";
       spielerListeQuiz.innerHTML = "";
@@ -251,6 +253,12 @@
       }
 
       aufloesenButton.disabled = Boolean(aktuelleRunde.revealed_at);
+
+      if (alleBeantwortet && !aktuelleRunde.revealed_at && !autoAufloesungLaeuft) {
+        autoAufloesungLaeuft = true;
+        await aufloesen();
+        autoAufloesungLaeuft = false;
+      }
     }
 
     function ladeLeaderboard() {
@@ -329,6 +337,7 @@
       }
 
       aktuelleRunde = runde;
+      autoAufloesungLaeuft = false;
       nextButton.disabled = false;
 
       const { data: frage, error: frageError } = await supabase.from("questions")
