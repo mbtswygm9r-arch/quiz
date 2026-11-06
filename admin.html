@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quiz – Fragen-Backoffice</title>
+<style>
+body{max-width:900px;margin:40px auto;padding:0 20px;font-family:Arial,sans-serif;color:#172033}
+button{padding:10px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.box{margin-top:20px;padding:16px;border:1px solid #d9dee8;border-radius:12px}
+.hidden{display:none}
+input,select{width:100%;padding:10px;margin:6px 0;border:1px solid #d9dee8;border-radius:8px;font:inherit}
+.frage{padding:12px;border-bottom:1px solid #d9dee8}
+.frage:last-child{border-bottom:0}
+.optionen{margin:8px 0 0 0}
+.klein{font-size:.9rem;color:#5b6472}
+.error{color:#b42318}.success{color:#15803d}
+</style>
+</head>
+<body>
+<h1>Fragen-Backoffice</h1>
+<p>Verwalte Fragen und Antwortoptionen für das Quiz.</p>
+<p><a href="host.html">Zurück zum Host</a></p>
+
+<section class="box">
+<h2 id="formTitle">Neue Frage</h2>
+<label>Fragetext</label>
+<input id="frageText" placeholder="Frage eingeben">
+<label>Typ</label>
+<select id="quizType">
+<option value="multiple_choice">Multiple Choice</option>
+</select>
+<div id="optionen">
+<div><input class="option" placeholder="Antwort 1"><label><input type="radio" name="richtig" value="0" checked> Richtig</label></div>
+<div><input class="option" placeholder="Antwort 2"><label><input type="radio" name="richtig" value="1"> Richtig</label></div>
+<div><input class="option" placeholder="Antwort 3"><label><input type="radio" name="richtig" value="2"> Richtig</label></div>
+<div><input class="option" placeholder="Antwort 4"><label><input type="radio" name="richtig" value="3"> Richtig</label></div>
+</div>
+<button id="speichern">Speichern</button>
+<button id="abbrechen" class="hidden">Abbrechen</button>
+<p id="meldung"></p>
+</section>
+
+<section class="box">
+<h2>Fragen</h2>
+<div id="liste"></div>
+</section>
+
+<script type="module">
+import{createClient}from"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const supabase=createClient("https://deqgoakcxiijhcujzems.supabase.co","sb_publishable_wCAMvhqeluaumYlZ1XK1Dw_VKgo1WGT");
+const $=id=>document.getElementById(id);
+let bearbeiteId=null;
+
+function meldung(t,cls=""){const m=$("meldung");m.textContent=t;m.className=cls}
+
+async function login(){const{data:{session}}=await supabase.auth.getSession();if(!session)await supabase.auth.signInAnonymously()}
+
+async function ladeFragen(){
+const{data,error}=await supabase.from("questions").select("*,question_options(*)").order("created_at",{ascending:false});
+if(error)return meldung("Fehler: "+error.message,"error");
+$("liste").innerHTML=data.map(f=>`
+<div class="frage">
+<strong>${f.display_text}</strong>
+<div class="optionen">${f.question_options.map(o=>`<div class="klein">${o.is_correct?"✓":"•"} ${o.option_text}</div>`).join("")}</div>
+<button onclick="window.bearbeite('${f.id}')">Bearbeiten</button>
+<button onclick="window.loesche('${f.id}')">Löschen</button>
+</div>`).join("")||"<p>Noch keine Fragen.</p>";
+}
+
+window.bearbeite=async id=>{
+const{data:f}=await supabase.from("questions").select("*,question_options(*)").eq("id",id).single();
+if(!f)return;
+bearbeiteId=id;
+$("formTitle").textContent="Frage bearbeiten";
+$("frageText").value=f.display_text;
+$("quizType").value=f.quiz_type||"multiple_choice";
+const inputs=[...document.querySelectorAll(".option")];
+f.question_options.forEach((o,i)=>{if(inputs[i])inputs[i].value=o.option_text});
+const richtig=f.question_options.findIndex(o=>o.is_correct);
+const radios=[...document.querySelectorAll('input[name=richtig]')];
+radios.forEach(r=>r.checked=Number(r.value)===richtig);
+$("abbrechen").classList.remove("hidden");
+}
+
+window.loesche=async id=>{
+if(!confirm("Frage wirklich löschen?"))return;
+await supabase.from("question_options").delete().eq("question_id",id);
+const{error}=await supabase.from("questions").delete().eq("id",id);
+if(error)return meldung("Fehler: "+error.message,"error");
+meldung("Frage gelöscht.","success");ladeFragen();
+}
+
+$("abbrechen").onclick=()=>{bearbeiteId=null;$("formTitle").textContent="Neue Frage";$("frageText").value="";[...document.querySelectorAll(".option")].forEach(i=>i.value="");$("abbrechen").classList.add("hidden")};
+
+$("speichern").onclick=async()=>{
+const text=$("frageText").value.trim();
+const optionen=[...document.querySelectorAll(".option")].map(i=>i.value.trim());
+const richtigIndex=Number(document.querySelector('input[name=richtig]:checked').value);
+if(!text||optionen.some(o=>!o))return meldung("Bitte Frage und alle Antworten ausfüllen.","error");
+try{
+if(bearbeiteId){
+await supabase.from("questions").update({display_text:text,quiz_type:$("quizType").value}).eq("id",bearbeiteId);
+await supabase.from("question_options").delete().eq("question_id",bearbeiteId);
+await supabase.from("question_options").insert(optionen.map((t,i)=>({question_id:bearbeiteId,option_text:t,is_correct:i===richtigIndex,sort_order:i})));
+meldung("Frage aktualisiert.","success");
+}else{
+const{data:f,error:e}=await supabase.from("questions").insert({display_text:text,quiz_type:$("quizType").value}).select().single();
+if(e)throw e;
+await supabase.from("question_options").insert(optionen.map((t,i)=>({question_id:f.id,option_text:t,is_correct:i===richtigIndex,sort_order:i})));
+meldung("Frage angelegt.","success");
+}
+bearbeiteId=null;
+$("formTitle").textContent="Neue Frage";
+$("frageText").value="";[...document.querySelectorAll(".option")].forEach(i=>i.value="");
+$("abbrechen").classList.add("hidden");
+ladeFragen();
+}catch(e){meldung("Fehler: "+e.message,"error")}
+}
+
+await login();ladeFragen();
+</script>
+</body>
+</html>
