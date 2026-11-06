@@ -30,7 +30,17 @@ input,select{width:100%;padding:10px;margin:6px 0;border:1px solid #d9dee8;borde
 <label>Typ</label>
 <select id="quizType">
 <option value="multiple_choice">Multiple Choice</option>
+<option value="music">Musik erraten</option>
 </select>
+<div id="musicFelder" class="hidden">
+<label>Quelle</label>
+<select id="mediaType">
+<option value="apple">Apple Music / iTunes</option>
+<option value="youtube">YouTube</option>
+</select>
+<label>Link oder Preview-URL</label>
+<input id="mediaUrl" placeholder="Apple-Preview oder YouTube-Link">
+</div>
 <div id="optionen">
 <div><input class="option" placeholder="Antwort 1"><label><input type="radio" name="richtig" value="0" checked> Richtig</label></div>
 <div><input class="option" placeholder="Antwort 2"><label><input type="radio" name="richtig" value="1"> Richtig</label></div>
@@ -54,6 +64,7 @@ const $=id=>document.getElementById(id);
 let bearbeiteId=null;
 
 function meldung(t,cls=""){const m=$("meldung");m.textContent=t;m.className=cls}
+function toggleMusic(){$("musicFelder").classList.toggle("hidden",$("quizType").value!=="music")}
 
 async function login(){const{data:{session}}=await supabase.auth.getSession();if(!session)await supabase.auth.signInAnonymously()}
 
@@ -63,6 +74,7 @@ if(error)return meldung("Fehler: "+error.message,"error");
 $("liste").innerHTML=data.map(f=>`
 <div class="frage">
 <strong>${f.display_text}</strong>
+<div class="klein">Typ: ${f.quiz_type}${f.media_type?" · Quelle: "+f.media_type:""}</div>
 <div class="optionen">${f.question_options.map(o=>`<div class="klein">${o.is_correct?"✓":"•"} ${o.option_text}</div>`).join("")}</div>
 <button onclick="window.bearbeite('${f.id}')">Bearbeiten</button>
 <button onclick="window.loesche('${f.id}')">Löschen</button>
@@ -76,6 +88,9 @@ bearbeiteId=id;
 $("formTitle").textContent="Frage bearbeiten";
 $("frageText").value=f.display_text;
 $("quizType").value=f.quiz_type||"multiple_choice";
+toggleMusic();
+$("mediaType").value=f.media_type||"apple";
+$("mediaUrl").value=f.media_url||"";
 const inputs=[...document.querySelectorAll(".option")];
 f.question_options.forEach((o,i)=>{if(inputs[i])inputs[i].value=o.option_text});
 const richtig=f.question_options.findIndex(o=>o.is_correct);
@@ -92,33 +107,37 @@ if(error)return meldung("Fehler: "+error.message,"error");
 meldung("Frage gelöscht.","success");ladeFragen();
 }
 
-$("abbrechen").onclick=()=>{bearbeiteId=null;$("formTitle").textContent="Neue Frage";$("frageText").value="";[...document.querySelectorAll(".option")].forEach(i=>i.value="");$("abbrechen").classList.add("hidden")};
+$("abbrechen").onclick=()=>{bearbeiteId=null;$("formTitle").textContent="Neue Frage";$("frageText").value="";[...document.querySelectorAll(".option")].forEach(i=>i.value="");$("mediaUrl").value="";$("abbrechen").classList.add("hidden")};
 
 $("speichern").onclick=async()=>{
 const text=$("frageText").value.trim();
 const optionen=[...document.querySelectorAll(".option")].map(i=>i.value.trim());
 const richtigIndex=Number(document.querySelector('input[name=richtig]:checked').value);
+const istMusik=$("quizType").value==="music";
 if(!text||optionen.some(o=>!o))return meldung("Bitte Frage und alle Antworten ausfüllen.","error");
+if(istMusik&&!$("mediaUrl").value.trim())return meldung("Bitte eine Musik-Quelle angeben.","error");
+const daten={display_text:text,quiz_type:$("quizType").value,media_type:istMusik?$("mediaType").value:null,media_url:istMusik?$("mediaUrl").value.trim():null};
 try{
 if(bearbeiteId){
-await supabase.from("questions").update({display_text:text,quiz_type:$("quizType").value}).eq("id",bearbeiteId);
+await supabase.from("questions").update(daten).eq("id",bearbeiteId);
 await supabase.from("question_options").delete().eq("question_id",bearbeiteId);
 await supabase.from("question_options").insert(optionen.map((t,i)=>({question_id:bearbeiteId,option_text:t,is_correct:i===richtigIndex,sort_order:i})));
 meldung("Frage aktualisiert.","success");
 }else{
-const{data:f,error:e}=await supabase.from("questions").insert({display_text:text,quiz_type:$("quizType").value}).select().single();
+const{data:f,error:e}=await supabase.from("questions").insert(daten).select().single();
 if(e)throw e;
 await supabase.from("question_options").insert(optionen.map((t,i)=>({question_id:f.id,option_text:t,is_correct:i===richtigIndex,sort_order:i})));
 meldung("Frage angelegt.","success");
 }
 bearbeiteId=null;
 $("formTitle").textContent="Neue Frage";
-$("frageText").value="";[...document.querySelectorAll(".option")].forEach(i=>i.value="");
+$("frageText").value="";[...document.querySelectorAll(".option")].forEach(i=>i.value="");$("mediaUrl").value="";
 $("abbrechen").classList.add("hidden");
 ladeFragen();
 }catch(e){meldung("Fehler: "+e.message,"error")}
 }
 
+$("quizType").onchange=toggleMusic;
 await login();ladeFragen();
 </script>
 </body>

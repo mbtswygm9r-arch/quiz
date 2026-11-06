@@ -13,6 +13,8 @@ button:disabled{opacity:.5}
 .countdown{font-size:1.5rem;font-weight:bold;color:#b42318}
 .richtig{color:#15803d}.falsch{color:#b42318}
 .loesung{margin-top:12px;padding:12px;border-radius:8px;background:#f0fdf4;color:#15803d;font-weight:bold}
+iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:8px}
+audio{width:100%;margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -20,6 +22,7 @@ button:disabled{opacity:.5}
 <div id="loading" class="box">Lade Quiz …</div>
 <div id="question" class="box hidden">
 <p id="questionText"></p>
+<div id="media"></div>
 <p class="countdown">Zeit: <span id="countdown">40</span> s</p>
 <div id="options"></div>
 <button id="pauseButton">Pause</button>
@@ -60,6 +63,21 @@ const{data}=await supabase.from("players").select("id").eq("lobby_id",lobbyId).e
 return data;
 }
 
+function youtubeId(url){
+try{const u=new URL(url);if(u.hostname.includes("youtu.be"))return u.pathname.slice(1);if(u.searchParams.get("v"))return u.searchParams.get("v");if(u.pathname.startsWith("/embed/"))return u.pathname.split("/")[2]}catch(e){}
+return "";
+}
+
+function zeigeMusik(q){
+const m=$("media");m.innerHTML="";
+if(q.media_type==="apple"&&q.media_url){
+const a=document.createElement("audio");a.controls=true;a.src=q.media_url;a.autoplay=true;m.appendChild(a);
+}else if(q.media_type==="youtube"&&q.media_url){
+const id=youtubeId(q.media_url);
+if(id){const f=document.createElement("iframe");f.src=`https://www.youtube.com/embed/${id}?autoplay=1`;f.allow="autoplay; encrypted-media";m.appendChild(f)}
+}
+}
+
 async function load(){
 if(!lobbyId)return;
 const{data:r}=await supabase.from("rounds").select("*").eq("lobby_id",lobbyId).eq("status","active").order("started_at",{ascending:false}).limit(1).maybeSingle();
@@ -71,6 +89,7 @@ if(answered){hideAll();show("waiting");return}
 const{data:q}=await supabase.from("questions").select("*").eq("id",r.question_id).single();
 const{data:options}=await supabase.from("question_options").select("*").eq("question_id",r.question_id).order("sort_order");
 $("questionText").textContent=q.display_text;
+if(q.quiz_type==="music")zeigeMusik(q);else $("media").innerHTML="";
 $("options").innerHTML="";
 options.forEach(o=>{
 const b=document.createElement("button");b.textContent=o.option_text;
@@ -106,7 +125,6 @@ supabase.channel("lobby-"+lobbyId).on("postgres_changes",{event:"UPDATE",schema:
 controlChannel=supabase.channel("control-"+lobbyId);
 controlChannel.on("broadcast",{event:"control"},({payload})=>{
 if(payload.action==="time")$("countdown").textContent=payload.remaining;
-if(payload.action==="revealed"){/* Ergebnis kommt über rounds-Update */}
 }).subscribe();
 ["pauseButton","pauseButtonWaiting"].forEach(id=>$(id)?.addEventListener("click",togglePause));
 }
